@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+credentials.json
+token.json
+*.key
+*.pem
+
+# Database
+kaal.db
+kaal.db-wal
+kaal.db-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+logs/
+*.log
+
+# Archives
+*.tar.gz
+*.zip
+
+# macOS
+.DS_Store
+
+# Voice recordings (Telegram downloads)
+voice/
+
+# Build / temp
+dist/
+tmp/
