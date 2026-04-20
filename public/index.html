@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaal — Time is Everything</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#faf9f7;color:#2d2a26;font-family:'DM Sans',sans-serif;min-height:100vh;-webkit-text-size-adjust:100%}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-thumb{background:#d0cdc8;border-radius:4px}
+
+.app{max-width:940px;margin:0 auto;padding:24px 28px 40px}
+
+/* Dark mode */
+.dark{background:#1a1a1e;color:#e8e6e2}
+.dark .surface{background:rgba(255,255,255,0.06) !important;border-color:rgba(255,255,255,0.08) !important}
+.dark .surface2{background:rgba(255,255,255,0.04) !important}
+.dark .text2{color:#a09a90 !important}
+.dark .text3{color:#6a6560 !important}
+.dark .cal-cell{background:rgba(255,255,255,0.04) !important;border-color:rgba(255,255,255,0.06) !important}
+.dark .cal-cell.today{background:rgba(180,140,50,0.08) !important;border-color:rgba(180,140,50,0.2) !important}
+.dark .cal-cell.selected{background:rgba(180,140,50,0.12) !important;border-color:rgba(180,140,50,0.3) !important}
+.dark input,.dark button{color:#e8e6e2}
+.dark .chip-outlook{background:rgba(200,165,50,0.15) !important;color:#d4b44a !important}
+.dark .chip-gmail{background:rgba(180,120,40,0.15) !important;color:#c49040 !important}
+.dark .cd-box{background:linear-gradient(160deg,#1e1c18,#1a1a1e) !important;border-color:rgba(180,140,50,0.15) !important}
+.dark .join-teams{background:#b48c32 !important}
+.dark .join-gmail{background:#a07028 !important}
+
+/* Mobile responsive */
+@media(max-width:640px){
+  .app{padding:14px 10px 24px}
+  /* Kanban stacks vertically */
+  .kanban-grid{grid-template-columns:1fr !important}
+  /* Calendar cells smaller */
+  .cal-grid div{min-height:65px !important;padding:6px 4px !important}
+  .cal-grid{gap:3px !important}
+  /* Countdown smaller */
+  .cd-units{gap:2px !important}
+  .cd-units>div{min-width:44px !important;padding:4px 2px !important}
+  .cd-val{font-size:24px !important}
+  /* Meeting chips */
+  .meet-chip{font-size:8px !important;padding:2px 4px !important}
+  /* Meeting detail cards */
+  .meeting-card{padding:12px !important}
+  .meeting-card div:first-child div:first-child{font-size:14px !important}
+  /* Settings */
+  .settings-wrap{max-width:100% !important}
+  /* Touch friendly buttons */
+  button{min-height:36px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="hdr"></div>
+  <div id="cdown"></div>
+  <div id="tabs"></div>
+  <div id="content" style="overflow-y:auto"></div>
+  <div style="margin-top:40px;padding-top:16px;border-top:1px solid #e8e5e0;display:flex;justify-content:space-between">
+    <span style="font-family:'DM Mono',monospace;font-size:10px;color:#b0aa9f;letter-spacing:1px">KAAL v0.1 — LOCAL</span>
+    <span style="font-family:'DM Mono',monospace;font-size:10px;color:#b0aa9f">● Connected</span>
+  </div>
+</div>
+
+<script>
+const API='/api',FM="'DM Mono',monospace",FB="'DM Sans',sans-serif";
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const pad=n=>String(n).padStart(2,'0');
+const esc=s=>{const d=document.createElement('div');d.textContent=s||'';return d.innerHTML};
+
+const S={tab:'meetings',dark:false,birth:'1975-03-31',death:'2065-03-31',events:[],tasks:[],defaults:[],
+  vy:new Date().getFullYear(),vm:new Date().getMonth(),selDay:null,dragId:null,
+  taskView:'today',taskDate:new Date().toLocaleDateString('en-CA'),monthTasks:{},tvy:new Date().getFullYear(),tvm:new Date().getMonth(),
+  habits:[],habitMonth:{},habitView:'today',hvy:new Date().getFullYear(),hvm:new Date().getMonth(),
+  vitamins:[],allVitamins:[],
+  pomo:{active:false,sessionId:null,taskText:'',timeLeft:0,duration:25,onBreak:false,count:0},pomoToday:{sessions:[],completed:0,totalMinutes:0},
+  hobbyTab:'chess',chessPuzzle:null,chessSelected:null,chessMoves:[],chessSolved:false,hobbyProgress:{chess:0,kannada:0,astronomy:0},
+  kannadaLesson:0,astroLesson:0,
+  kannadaInput:'',kannadaResult:null,kannadaLoading:false,savedPhrases:[],phrasesView:'translate',
+  astroView:'learn',selectedPlanet:undefined,astroImages:{},
+  sadhanaItems:[],sadhanaDate:new Date().toLocaleDateString('en-CA'),
+  weightData:{logs:[],latest:null,change:0,min:0,max:0,avg:0,count:0},weightPeriod:'month',weight_goal:'70'};
+
+// colors
+const LC={accent:'#8b6914',accentBg:'rgba(139,105,20,0.08)',accentBorder:'rgba(139,105,20,0.15)',
+  outlook:'#7a6018',outlookBg:'rgba(122,96,24,0.1)',gmail:'#9a5e10',gmailBg:'rgba(154,94,16,0.1)',
+  green:'#2e7d42',red:'#c0392b',amber:'#b8860b',surface:'#fff',surface2:'#f5f3f0',border:'#e8e5e0',
+  text:'#2d2a26',text2:'#7a756e',text3:'#a8a29a',cdBg:'linear-gradient(135deg,#f8f6f2,#f0ede8)',cdBorder:'#e0dbd4'};
+const DC={accent:'#d4b44a',accentBg:'rgba(212,180,74,0.1)',accentBorder:'rgba(212,180,74,0.2)',
+  outlook:'#d4b44a',outlookBg:'rgba(212,180,74,0.12)',gmail:'#c49040',gmailBg:'rgba(196,144,64,0.12)',
+  green:'#6ab07a',red:'#e05555',amber:'#e0a830',surface:'rgba(255,255,255,0.06)',surface2:'rgba(255,255,255,0.04)',
+  border:'rgba(255,255,255,0.08)',text:'#e8e6e2',text2:'#a09a90',text3:'#6a6560',
+  cdBg:'linear-gradient(135deg,#222018,#1a1a1e)',cdBorder:'rgba(180,140,50,0.15)'};
+function C(){return S.dark?DC:LC}
+
+// API
+const eventCache={};
+async function fetchEvents(){
+  const cacheKey=S.vy+'-'+S.vm;
+  try{const n=new Date(S.vy,S.vm,1),e=new Date(S.vy,S.vm+1,0,23,59,59);
+  const r=await fetch(API+'/events?start='+n.toISOString()+'&end='+e.toISOString());
+  const data=await r.json();
+  S.events=data;eventCache[cacheKey]=data}catch(e){S.events=eventCache[cacheKey]||[]}
+  renderContent()}
+async function fetchTasks(){try{const r=await fetch(API+'/tasks?date='+S.taskDate);S.tasks=await r.json()}catch(e){S.tasks=[]}renderContent()}
+async function fetchDefaults(){try{const r=await fetch(API+'/default-tasks');S.defaults=await r.json()}catch(e){S.defaults=[]}renderContent()}
+async function fetchSettings(){try{const r=await fetch(API+'/settings');const s=await r.json();if(s.birth_date)S.birth=s.birth_date;if(s.death_date)S.death=s.death_date;S.vitamin_morning=s.vitamin_morning||'08:00';S.vitamin_noon=s.vitamin_noon||'13:00';S.vitamin_night=s.vitamin_night||'21:00';S.weight_goal=s.weight_goal||'70'}catch(e){}renderCountdownFull()}
+async function addTask(t){await fetch(API+'/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,date:S.taskDate})});fetchTasks();if(S.taskView==='month')fetchMonthTasks()}
+async function fetchMonthTasks(){try{const r=await fetch(API+'/tasks/month?year='+S.tvy+'&month='+(S.tvm+1));S.monthTasks=await r.json()}catch(e){S.monthTasks={}}renderContent()}
+async function updateTask(id,d){await fetch(API+'/tasks/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});fetchTasks();if(S.taskView==='month')fetchMonthTasks()}
+async function deleteTask(id){await fetch(API+'/tasks/'+id,{method:'DELETE'});fetchTasks();if(S.taskView==='month')fetchMonthTasks()}
+async function saveSetting(k,v){await fetch(API+'/settings/'+k,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:v})})}
+async function addDefault(t){await fetch(API+'/default-tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});await fetch(API+'/seed-defaults',{method:'POST'});fetchDefaults();fetchTasks()}
+async function deleteDefault(id){await fetch(API+'/default-tasks/'+id,{method:'DELETE'});fetchDefaults()}
+
+async function fetchHabitsToday(){try{const r=await fetch(API+'/habits/today');S.habits=await r.json()}catch(e){S.habits=[]}renderContent()}
+async function fetchHabitMonth(){try{const r=await fetch(API+'/habits/month?year='+S.hvy+'&month='+(S.hvm+1));S.habitMonth=await r.json()}catch(e){S.habitMonth={}}renderContent()}
+async function toggleHabit(id){await fetch(API+'/habits/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});fetchHabitsToday();if(S.habitView==='month')fetchHabitMonth()}
+async function addHabit(name){await fetch(API+'/habits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});fetchHabitsToday();fetchHabitMonth()}
+async function deleteHabit(id){await fetch(API+'/habits/'+id,{method:'DELETE'});fetchHabitsToday();fetchHabitMonth()}
+
+async function fetchVitamins(){try{const r=await fetch(API+'/vitamins/today');S.vitamins=await r.json()}catch(e){S.vitamins=[]}renderContent()}
+async function fetchAllVitamins(){try{const r=await fetch(API+'/vitamins');S.allVitamins=await r.json()}catch(e){S.allVitamins=[]}renderContent()}
+async function toggleVitamin(id,slot){await fetch(API+'/vitamins/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time_slot:slot})});fetchVitamins()}
+async function addVitamin(name,type,value,slots,notes){await fetch(API+'/vitamins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,schedule_type:type,schedule_value:parseInt(value)||1,time_slots:slots,notes:notes||''})});fetchVitamins();fetchAllVitamins()}
+async function deleteVitamin(id){await fetch(API+'/vitamins/'+id,{method:'DELETE'});fetchVitamins();fetchAllVitamins()}
+
+// ── HOBBIES ──
+async function fetchChessPuzzle(){
+  try{const r=await fetch(API+'/hobbies/chess/puzzle');const d=await r.json();
+  S.chessPuzzle=d.puzzle||d;S.chessSelected=null;S.chessMoves=[];S.chessSolved=false;renderContent()}catch(e){console.log('Chess error:',e)}
+}
+async function fetchHobbyProgress(){try{const r=await fetch(API+'/hobbies/progress');S.hobbyProgress=await r.json()}catch(e){}}
+async function saveHobbyProgress(hobby,lessonId,data){
+  await fetch(API+'/hobbies/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hobby,lesson_id:lessonId,data})});
+  fetchHobbyProgress();
+}
+
+// Chess helpers
+const PIECES={'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙','k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'};
+function parseFEN(fen){
+  const rows=fen.split(' ')[0].split('/');
+  const board=[];
+  rows.forEach(row=>{const r=[];for(const c of row){if(c>='1'&&c<='8')for(let i=0;i<parseInt(c);i++)r.push('');else r.push(c)}board.push(r)});
+  return board;
+}
+function coordToAlg(r,c){return String.fromCharCode(97+c)+(8-r)}
+
+// Kannada lesson data
+const KANNADA_LESSONS=[
+  {id:0,title:'Vowels (ಸ್ವರಗಳು) — Part 1',items:[
+    {kan:'ಅ',trans:'a',sound:'like "u" in "but"',word:'ಅಮ್ಮ (amma) = mother'},
+    {kan:'ಆ',trans:'aa',sound:'like "a" in "father"',word:'ಆನೆ (aane) = elephant'},
+    {kan:'ಇ',trans:'i',sound:'like "i" in "bit"',word:'ಇಲಿ (ili) = mouse'},
+    {kan:'ಈ',trans:'ee',sound:'like "ee" in "see"',word:'ಈಗ (eega) = now'},
+    {kan:'ಉ',trans:'u',sound:'like "u" in "put"',word:'ಉಪ್ಪು (uppu) = salt'},
+  ]},
+  {id:1,title:'Vowels (ಸ್ವರಗಳು) — Part 2',items:[
+    {kan:'ಊ',trans:'oo',sound:'like "oo" in "boot"',word:'ಊಟ (oota) = meal'},
+    {kan:'ಎ',trans:'e',sound:'like "e" in "bed"',word:'ಎಲೆ (ele) = leaf'},
+    {kan:'ಏ',trans:'ae',sound:'like "a" in "late"',word:'ಏನು (aenu) = what'},
+    {kan:'ಐ',trans:'ai',sound:'like "ai" in "aisle"',word:'ಐದು (aidu) = five'},
+    {kan:'ಒ',trans:'o',sound:'like "o" in "go"',word:'ಒಂದು (ondu) = one'},
+  ]},
+  {id:2,title:'Vowels (ಸ್ವರಗಳು) — Part 3',items:[
+    {kan:'ಓ',trans:'o',sound:'like "o" in "more"',word:'ಓದು (odu) = read'},
+    {kan:'ಔ',trans:'au',sound:'like "ou" in "house"',word:'ಔಷಧ (aushada) = medicine'},
+    {kan:'ಅಂ',trans:'am',sound:'nasal "um"',word:'ಅಂಗಡಿ (angadi) = shop'},
+    {kan:'ಅಃ',trans:'aha',sound:'aspirated "ah"',word:'Used in Sanskrit loanwords'},
+  ]},
+  {id:3,title:'Consonants (ವ್ಯಂಜನಗಳು) — Ka Row',items:[
+    {kan:'ಕ',trans:'ka',sound:'like "k" in "kite"',word:'ಕಮಲ (kamala) = lotus'},
+    {kan:'ಖ',trans:'kha',sound:'aspirated "k"',word:'ಖಗ (khaga) = bird'},
+    {kan:'ಗ',trans:'ga',sound:'like "g" in "go"',word:'ಗಣೇಶ (Ganesha)'},
+    {kan:'ಘ',trans:'gha',sound:'aspirated "g"',word:'ಘಂಟೆ (ghante) = bell'},
+    {kan:'ಙ',trans:'nga',sound:'like "ng" in "sing"',word:'Used in combinations'},
+  ]},
+  {id:4,title:'Consonants — Cha Row',items:[
+    {kan:'ಚ',trans:'cha',sound:'like "ch" in "chat"',word:'ಚಂದ್ರ (chandra) = moon'},
+    {kan:'ಛ',trans:'chha',sound:'aspirated "ch"',word:'ಛತ್ರಿ (chhatri) = umbrella'},
+    {kan:'ಜ',trans:'ja',sound:'like "j" in "jam"',word:'ಜಲ (jala) = water'},
+    {kan:'ಝ',trans:'jha',sound:'aspirated "j"',word:'Used in combinations'},
+    {kan:'ಞ',trans:'nya',sound:'like "ny" in "canyon"',word:'ಜ್ಞಾನ (jnaana) = knowledge'},
+  ]},
+  {id:5,title:'Numbers (ಸಂಖ್ಯೆಗಳು)',items:[
+    {kan:'ಒಂದು',trans:'ondu',sound:'on-du',word:'1 — one'},
+    {kan:'ಎರಡು',trans:'eradu',sound:'eh-ra-du',word:'2 — two'},
+    {kan:'ಮೂರು',trans:'mooru',sound:'moo-ru',word:'3 — three'},
+    {kan:'ನಾಲ್ಕು',trans:'naalku',sound:'naal-ku',word:'4 — four'},
+    {kan:'ಐದು',trans:'aidu',sound:'ai-du',word:'5 — five'},
+  ]},
+  {id:6,title:'Greetings (ಶುಭಾಶಯಗಳು)',items:[
+    {kan:'ನಮಸ್ಕಾರ',trans:'namaskara',sound:'na-mas-kaa-ra',word:'Hello / Greetings'},
+    {kan:'ಹೇಗಿದ್ದೀರಿ?',trans:'hegiddiri?',sound:'hay-gid-dee-ri',word:'How are you? (formal)'},
+    {kan:'ಚೆನ್ನಾಗಿದ್ದೇನೆ',trans:'chennaagiddene',sound:'chen-naa-gid-day-ne',word:'I am fine'},
+    {kan:'ಧನ್ಯವಾದ',trans:'dhanyavaada',sound:'dhan-ya-vaa-da',word:'Thank you'},
+    {kan:'ದಯವಿಟ್ಟು',trans:'dayavittu',sound:'da-ya-vit-tu',word:'Please'},
+  ]},
+  {id:7,title:'Daily Words — Family',items:[
+    {kan:'ಅಪ್ಪ',trans:'appa',sound:'ap-pa',word:'Father'},
+    {kan:'ಅಮ್ಮ',trans:'amma',sound:'am-ma',word:'Mother'},
+    {kan:'ಅಣ್ಣ',trans:'anna',sound:'an-na',word:'Elder brother'},
+    {kan:'ಅಕ್ಕ',trans:'akka',sound:'ak-ka',word:'Elder sister'},
+    {kan:'ಮಗ',trans:'maga',sound:'ma-ga',word:'Son'},
+  ]},
+  {id:8,title:'Daily Words — Food',items:[
+    {kan:'ಅನ್ನ',trans:'anna',sound:'an-na',word:'Rice'},
+    {kan:'ನೀರು',trans:'neeru',sound:'nee-ru',word:'Water'},
+    {kan:'ಹಾಲು',trans:'haalu',sound:'haa-lu',word:'Milk'},
+    {kan:'ಕಾಫಿ',trans:'kaafi',sound:'kaa-fi',word:'Coffee'},
+    {kan:'ಚಾ',trans:'chaa',sound:'chaa',word:'Tea'},
+  ]},
+  {id:9,title:'Useful Phrases',items:[
+    {kan:'ನನ್ನ ಹೆಸರು...',trans:'nanna hesaru...',sound:'nan-na he-sa-ru',word:'My name is...'},
+    {kan:'ಇದು ಎಷ್ಟು?',trans:'idu eshtu?',sound:'i-du esh-tu',word:'How much is this?'},
+    {kan:'ನನಗೆ ಗೊತ್ತಿಲ್ಲ',trans:'nanage gottilla',sound:'na-na-ge got-til-la',word:'I don\'t know'},
+    {kan:'ಸ್ವಲ್ಪ ನಿಧಾನವಾಗಿ',trans:'svalpa nidhaanavaagi',sound:'sval-pa ni-dhaa-na-vaa-gi',word:'A little slowly please'},
+    {kan:'ಶುಭ ರಾತ್ರಿ',trans:'shubha raatri',sound:'shu-bha raa-tri',word:'Good night'},
+  ]},
+];
+
+// Astronomy lesson data
+const ASTRO_LESSONS=[
+  {id:0,title:'What is Space?',content:'Space is everything beyond Earth\'s atmosphere. It\'s mostly empty — a vast vacuum with no air. But scattered through this emptiness are incredible objects: stars, planets, moons, asteroids, and galaxies.',
+  facts:['Space begins about 100 km above Earth (the Kármán line)','In space, no one can hear you scream — sound needs air to travel','Space is not completely empty — it has tiny particles and radiation'],
+  observe:'Tonight, go outside and look up. Everything you see with your naked eye is within our galaxy, the Milky Way.'},
+  {id:1,title:'Our Star — The Sun',content:'The Sun is a medium-sized star about 4.6 billion years old. It\'s a ball of hot gas (mostly hydrogen and helium) where nuclear fusion produces enormous energy. Light from the Sun takes 8 minutes 20 seconds to reach Earth.',
+  facts:['The Sun is 109 times wider than Earth','Its surface temperature is about 5,500°C','The Sun will last another 5 billion years'],
+  observe:'NEVER look directly at the Sun through your Celestron! Use a solar filter. Instead, notice how the Sun moves across the sky — this is actually Earth rotating.'},
+  {id:2,title:'The Moon — Our Nearest Neighbor',content:'The Moon is Earth\'s only natural satellite, about 384,400 km away. It\'s the easiest object to observe with your Celestron telescope. The dark patches are ancient lava plains called "maria" (seas).',
+  facts:['The Moon always shows the same face to Earth','It takes 27.3 days to orbit Earth','The Moon has no atmosphere — footprints there last millions of years'],
+  observe:'Point your Celestron at the Moon tonight! Start with lowest magnification. The craters along the day/night line (terminator) show the most detail because of shadows.'},
+  {id:3,title:'The Solar System — Inner Planets',content:'The four inner planets are rocky worlds: Mercury (smallest, closest to Sun), Venus (hottest, thick clouds), Earth (just right for life), and Mars (the red planet, has the largest volcano in the solar system).',
+  facts:['Venus rotates backwards compared to other planets','Mars has a mountain 3x taller than Everest (Olympus Mons)','Mercury has no atmosphere and extreme temperature swings'],
+  observe:'Venus is often the brightest object after the Moon — look for a brilliant "star" near the horizon at sunset or sunrise. Through your Celestron, you can see its crescent phases like a tiny Moon!'},
+  {id:4,title:'The Solar System — Outer Planets',content:'The outer planets are gas/ice giants: Jupiter (largest, has 95 known moons), Saturn (famous rings), Uranus (tilted sideways), and Neptune (windiest planet, 2000 km/h winds).',
+  facts:['Jupiter\'s Great Red Spot is a storm bigger than Earth','Saturn\'s rings are mostly ice particles','If Saturn were placed in water, it would float — it\'s less dense than water'],
+  observe:'Jupiter and Saturn are magnificent through your Celestron! Jupiter shows bands of clouds and its 4 bright moons (Galilean moons). Saturn\'s rings are visible even at low magnification.'},
+  {id:5,title:'Stars — What Are They?',content:'Stars are huge balls of gas undergoing nuclear fusion. Their color tells you their temperature: blue stars are hottest (30,000°C+), white are hot, yellow (like our Sun) are medium, and red stars are coolest (3,000°C). Brighter stars aren\'t always closer — some are just genuinely enormous.',
+  facts:['The nearest star (Proxima Centauri) is 4.24 light-years away','A light-year is about 9.46 trillion kilometers','Stars twinkle because Earth\'s atmosphere bends their light'],
+  observe:'Look for color differences in stars tonight. Betelgeuse (Orion\'s shoulder) is red/orange. Sirius (brightest star) appears white/blue. Through your Celestron, these colors become more vivid.'},
+  {id:6,title:'Constellations — Patterns in the Sky',content:'Constellations are patterns of stars that ancient cultures imagined as figures. There are 88 official constellations. They\'re like a map of the sky — once you learn a few, you can navigate to find anything. From Udupi (13°N latitude), you can see most constellations through the year.',
+  facts:['Stars in a constellation aren\'t actually near each other in space','The Big Dipper is not a constellation — it\'s part of Ursa Major','Different cultures saw different patterns in the same stars'],
+  observe:'Find Orion (the Hunter) — three stars in a row form his belt. It\'s one of the easiest constellations to spot and visible from Udupi during winter months.'},
+  {id:7,title:'Your Celestron Telescope — Getting Started',content:'Your Celestron is a window to the universe! Start with these basics: always begin with the lowest magnification eyepiece (highest number, e.g., 25mm). This gives you the widest view to find objects. Then switch to higher magnification to zoom in.',
+  facts:['Lower eyepiece number = higher magnification','Never point your telescope at the Sun without a solar filter','Let your telescope cool down outside for 20 minutes before observing'],
+  observe:'Practice by pointing at the Moon first — it\'s big, bright, and easy to find. Center it with low magnification, then swap to your highest eyepiece. You\'ll see craters, mountains, and maria!'},
+  {id:8,title:'What Can You See From Udupi?',content:'Udupi at 13°N latitude has excellent sky access! You can see most of the northern sky and a good portion of the southern sky. Light pollution affects visibility, so the darker your location, the more you\'ll see. The best viewing is on moonless nights, away from city lights.',
+  facts:['From Udupi, you can see both Polaris (north) and Southern Cross (seasonally)','The Milky Way is visible from dark spots near Udupi on clear moonless nights','Best months for stargazing: October to March (less monsoon cloud cover)'],
+  observe:'Find Polaris (the North Star): locate the Big Dipper, follow the two stars at the end of the "cup" upward — they point to Polaris. It barely moves all night because Earth\'s axis points near it.'},
+  {id:9,title:'Deep Sky Objects — Nebulae & Galaxies',content:'Beyond stars, your Celestron can reveal fuzzy patches of light that are actually enormous structures: nebulae (clouds of gas where stars are born or die) and galaxies (collections of billions of stars). The Andromeda Galaxy is visible to the naked eye from dark skies — and it contains a trillion stars!',
+  facts:['The Orion Nebula (M42) is 1,344 light-years away and visible through binoculars','Andromeda is 2.5 million light-years away — the most distant object visible to naked eye','Our Milky Way contains 100-400 billion stars'],
+  observe:'Find the Orion Nebula: look at Orion\'s sword (3 stars hanging below his belt). The middle "star" is actually the nebula! Through your Celestron, you\'ll see a faint glow — that\'s a stellar nursery where new stars are being born right now.'},
+];
+async function fetchPomoToday(){try{const r=await fetch(API+'/pomodoro/today');S.pomoToday=await r.json()}catch(e){}}
+async function startPomo(taskText){
+  const dur=parseInt(S.pomo.duration)||25;
+  try{const r=await fetch(API+'/pomodoro/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_text:taskText,duration:dur})});
+  const d=await r.json();S.pomo={active:true,sessionId:d.id,taskText,timeLeft:dur*60,duration:dur,onBreak:false,count:S.pomo.count};renderContent()}catch(e){}
+}
+async function completePomo(){
+  if(S.pomo.sessionId)await fetch(API+'/pomodoro/'+S.pomo.sessionId+'/complete',{method:'POST'});
+  S.pomo.count++;S.pomo.active=false;S.pomo.onBreak=true;
+  const breakDur=S.pomo.count%4===0?15:5;S.pomo.timeLeft=breakDur*60;S.pomo.active=true;
+  fetchPomoToday();renderContent();
+}
+function stopPomo(){S.pomo={active:false,sessionId:null,taskText:'',timeLeft:0,duration:S.pomo.duration,onBreak:false,count:S.pomo.count};renderContent()}
+
+function getCD(){const now=Date.now(),d=new Date(S.death).getTime(),b=new Date(S.birth).getTime();let diff=d-now;if(diff<=0)return{y:0,w:0,d:0,h:0,m:0,s:0,pct:100};const Y=365.25*864e5,y=Math.floor(diff/Y);diff-=y*Y;const w=Math.floor(diff/(7*864e5));diff-=w*7*864e5;const dd=Math.floor(diff/864e5);diff-=dd*864e5;const h=Math.floor(diff/36e5);diff-=h*36e5;const m=Math.floor(diff/6e4);diff-=m*6e4;const s=Math.floor(diff/1e3);return{y,w,d:dd,h,m,s,pct:Math.min((now-b)/(d-b)*100,100)}}
+
+function renderHeader(){
+  const n=new Date(),c=C();
+  document.getElementById('hdr').innerHTML=`
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,${c.accent},#b8860b);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff;letter-spacing:1px">K</div>
+      <div>
+        <div style="font-size:22px;font-weight:700;color:${c.accent};letter-spacing:3px">KAAL</div>
+        <div style="font-family:${FM};font-size:10px;color:${c.text3};letter-spacing:2px">TIME IS EVERYTHING</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="text-align:right">
+        <div style="font-family:${FM};font-size:11px;color:${c.text2}">${n.toLocaleDateString('en-IN',{weekday:'long'})}</div>
+        <div style="font-size:16px;font-weight:600;color:${c.text}">${n.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+      </div>
+      <button onclick="toggleTheme()" style="width:36px;height:36px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};cursor:pointer;font-size:16px">${S.dark?'☀':'☾'}</button>
+    </div>
+  </div>`;
+}
+
+function renderCountdownFull(){
+  const cd=getCD(),c=C();
+  document.getElementById('cdown').innerHTML=`
+  <div style="position:relative;padding:20px 24px 18px;border-radius:14px;background:${c.cdBg};border:1px solid ${c.cdBorder};overflow:hidden;margin-bottom:24px">
+    <div id="cd-bar" style="position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,${c.accent},${c.red});transition:width 1s;width:${cd.pct.toFixed(4)}%;border-radius:2px"></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+      <span style="font-family:${FM};font-size:10px;letter-spacing:3px;color:${c.accent};text-transform:uppercase;font-weight:500">⏳ Time Remaining</span>
+      <span id="cd-pct" style="font-family:${FM};font-size:10px;color:${c.text3}">${cd.pct.toFixed(4)}% elapsed</span>
+    </div>
+    <div class="cd-units m-gap" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      ${[{k:'y',l:'Years'},{k:'w',l:'Weeks'},{k:'d',l:'Days'},{k:'h',l:'Hours'},{k:'m',l:'Mins'},{k:'s',l:'Secs'}].map(u=>`<div style="text-align:center;min-width:50px;padding:6px">
+        <div id="cd-${u.k}" class="cd-val" style="font-size:32px;font-weight:300;color:${u.k==='s'?c.accent:c.text};line-height:1;font-family:${FM}">${pad(cd[u.k])}</div>
+        <div style="font-family:${FM};font-size:9px;letter-spacing:2px;color:${c.text3};margin-top:6px;text-transform:uppercase">${u.l}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function tickCD(){const cd=getCD();['y','w','d','h','m','s'].forEach(k=>{const el=document.getElementById('cd-'+k);if(el)el.textContent=pad(cd[k])});const bar=document.getElementById('cd-bar');if(bar)bar.style.width=cd.pct.toFixed(4)+'%';const pct=document.getElementById('cd-pct');if(pct)pct.textContent=cd.pct.toFixed(4)+'% elapsed'}
+
+function renderTabs(){
+  const c=C();
+  document.getElementById('tabs').innerHTML=`
+  <div style="display:flex;gap:3px;margin-bottom:24px;background:${c.surface2};border-radius:10px;padding:4px;border:1px solid ${c.border}">
+    ${[{k:'meetings',l:'📅 Meetings'},{k:'tasks',l:'✓ Tasks'},{k:'habits',l:'🔥 Habits'},{k:'vitamins',l:'💊 Vitamins'},{k:'hobbies',l:'🎯 Hobbies'},{k:'kaaya',l:'⚖️ Kaaya'},{k:'sadhana',l:'🧘 Sadhana'},{k:'settings',l:'⚙'}].map(t=>`<button onclick="switchTab('${t.k}')" style="flex:1;padding:10px 0;border-radius:8px;border:none;cursor:pointer;font-family:${FB};font-size:10px;font-weight:${S.tab===t.k?'600':'400'};letter-spacing:0.2px;transition:all 0.2s;
+      background:${S.tab===t.k?c.surface:'transparent'};
+      color:${S.tab===t.k?c.accent:c.text2};
+      ${S.tab===t.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${t.l}</button>`).join('')}
+  </div>`;
+}
+
+function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?renderVitamins():S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings()}
+
+function renderTaskHeader(){
+  const c=C();
+  const todayStr=new Date().toLocaleDateString('en-CA');
+  const isToday=S.taskDate===todayStr;
+  const viewDate=new Date(S.taskDate+'T12:00:00');
+  const dateLabel=isToday?'Today':viewDate.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+
+  let h=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">`;
+  h+=`<div style="display:flex;gap:4px;background:${c.surface2};border-radius:8px;padding:3px;border:1px solid ${c.border}">
+    <button onclick="setTaskView('today')" style="padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:${S.taskView==='today'?'600':'400'};font-family:${FB};
+      background:${S.taskView==='today'?c.surface:'transparent'};color:${S.taskView==='today'?c.accent:c.text2};
+      ${S.taskView==='today'?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">Kanban</button>
+    <button onclick="setTaskView('month')" style="padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:${S.taskView==='month'?'600':'400'};font-family:${FB};
+      background:${S.taskView==='month'?c.surface:'transparent'};color:${S.taskView==='month'?c.accent:c.text2};
+      ${S.taskView==='month'?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">Monthly</button>
+  </div>`;
+
+  if(S.taskView==='today'){
+    h+=`<div style="display:flex;align-items:center;gap:8px">`;
+    h+=`<button onclick="taskDatePrev()" style="padding:6px 10px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:14px">&lsaquo;</button>`;
+    h+=`<span style="font-family:${FM};font-size:13px;font-weight:600;color:${isToday?c.accent:c.text};min-width:120px;text-align:center">${dateLabel}</span>`;
+    h+=`<button onclick="taskDateNext()" style="padding:6px 10px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:14px">&rsaquo;</button>`;
+    if(!isToday) h+=`<button onclick="taskDateToday()" style="padding:6px 12px;border-radius:6px;border:1px solid ${c.accentBorder};background:${c.accentBg};color:${c.accent};cursor:pointer;font-family:${FM};font-size:11px;font-weight:500">Today</button>`;
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  return h;
+}
+
+function renderMonthlyTasks(){
+  const c=C(),fd=new Date(S.tvy,S.tvm,1).getDay(),dim=new Date(S.tvy,S.tvm+1,0).getDate();
+  const now=new Date(),today=now.getFullYear()===S.tvy&&now.getMonth()===S.tvm?now.getDate():-1;
+
+  // group tasks by day
+  const byDay={};
+  Object.entries(S.monthTasks).forEach(([date,tasks])=>{
+    const d=parseInt(date.split('-')[2]);
+    byDay[d]=tasks;
+  });
+
+  let h=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <div><span style="font-size:24px;font-weight:700;color:${c.text}">${MONTHS[S.tvm]}</span> <span style="font-size:24px;font-weight:300;color:${c.text2}">${S.tvy}</span></div>
+    <div style="display:flex;gap:6px">
+      <button onclick="taskMonthPrev()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">‹</button>
+      <button onclick="taskMonthToday()" style="padding:7px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-family:${FM};font-size:11px;font-weight:500">This Month</button>
+      <button onclick="taskMonthNext()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">›</button>
+    </div>
+  </div>`;
+
+  // day headers
+  h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px">';
+  DAYS.forEach(d=>{h+=`<div style="text-align:center;font-family:${FM};font-size:11px;color:${c.text3};padding:6px;font-weight:500">${d}</div>`});
+  h+='</div>';
+
+  // grid
+  h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  for(let i=0;i<fd;i++) h+='<div></div>';
+  for(let day=1;day<=dim;day++){
+    const tasks=byDay[day]||[];
+    const isT=day===today;
+    const stats={todo:0,inprogress:0,completed:0};
+    tasks.forEach(t=>stats[t.status]=(stats[t.status]||0)+1);
+    const total=tasks.length;
+
+    h+=`<div onclick="viewTaskDate('${S.tvy}-${pad(S.tvm+1)}-${pad(day)}')" style="padding:10px 8px;border-radius:10px;min-height:85px;background:${isT?'rgba(139,105,20,0.04)':c.surface};border:1px solid ${isT?'rgba(139,105,20,0.12)':c.border};cursor:pointer;transition:all 0.15s" onmouseenter="this.style.borderColor='${c.accentBorder}'" onmouseleave="this.style.borderColor='${isT?'rgba(139,105,20,0.12)':c.border}'">`;
+    h+=`<div style="font-family:${FM};font-size:14px;font-weight:${isT?'700':'500'};color:${isT?c.accent:c.text};margin-bottom:6px">${day}</div>`;
+
+    if(total>0){
+      // mini progress bar
+      const pctDone=Math.round((stats.completed/total)*100);
+      const pctProg=Math.round((stats.inprogress/total)*100);
+      h+=`<div style="height:4px;border-radius:2px;background:${c.surface2};margin-bottom:6px;overflow:hidden;display:flex">
+        <div style="width:${pctDone}%;background:${c.green};border-radius:2px"></div>
+        <div style="width:${pctProg}%;background:${c.amber}"></div>
+      </div>`;
+
+      // task summary
+      if(stats.completed) h+=`<div style="font-family:${FM};font-size:9px;color:${c.green};margin-top:2px">● ${stats.completed} done</div>`;
+      if(stats.inprogress) h+=`<div style="font-family:${FM};font-size:9px;color:${c.amber};margin-top:1px">◐ ${stats.inprogress} active</div>`;
+      if(stats.todo) h+=`<div style="font-family:${FM};font-size:9px;color:${c.text3};margin-top:1px">○ ${stats.todo} to-do</div>`;
+    } else {
+      h+=`<div style="font-family:${FM};font-size:9px;color:${c.text3};opacity:0.5;margin-top:4px">—</div>`;
+    }
+    h+='</div>';
+  }
+  h+='</div>';
+
+  // Legend
+  h+=`<div style="display:flex;gap:16px;margin-top:16px;justify-content:center">
+    <span style="font-family:${FM};font-size:10px;color:${c.green}">● Done</span>
+    <span style="font-family:${FM};font-size:10px;color:${c.amber}">◐ In Progress</span>
+    <span style="font-family:${FM};font-size:10px;color:${c.text3}">○ To Do</span>
+  </div>`;
+
+  return h;
+}
+
+function renderPomoTimer(){
+  const c=C();
+  if(!S.pomo.active) return '';
+  const mins=Math.floor(S.pomo.timeLeft/60);
+  const secs=S.pomo.timeLeft%60;
+  const pct=S.pomo.timeLeft/((S.pomo.onBreak?(S.pomo.count%4===0?15:5):S.pomo.duration)*60)*100;
+  const color=S.pomo.onBreak?c.green:c.accent;
+
+  return `<div style="padding:16px 20px;border-radius:12px;background:${c.surface};border:1px solid ${c.border};margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <span style="font-size:14px;font-weight:600;color:${color}">${S.pomo.onBreak?'☕ Break Time':'🍅 Focus Mode'}</span>
+        <span style="font-family:${FM};font-size:11px;color:${c.text3};margin-left:10px">${esc(S.pomo.taskText)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-family:${FM};font-size:10px;color:${c.text3}">${'🍅'.repeat(S.pomo.count)} ${S.pomo.count} done</span>
+        <button onclick="stopPomo()" style="font-family:${FM};font-size:10px;padding:4px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.red};cursor:pointer">Stop</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div style="font-family:${FM};font-size:36px;font-weight:300;color:${color};min-width:100px" id="pomo-time">${pad(mins)}:${pad(secs)}</div>
+      <div style="flex:1;height:6px;border-radius:3px;background:${c.surface2};overflow:hidden">
+        <div id="pomo-bar" style="height:100%;border-radius:3px;background:${color};width:${pct}%;transition:width 1s"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderHabitHeader(){
+  const c=C();
+  return `<div style="display:flex;gap:4px;margin-bottom:20px;background:${c.surface2};border-radius:8px;padding:3px;border:1px solid ${c.border};max-width:280px">
+    ${[{k:'today',l:'Today'},{k:'month',l:'Monthly'}].map(v=>`<button onclick="setHabitView('${v.k}')" style="flex:1;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:${S.habitView===v.k?'600':'400'};font-family:${FB};
+      background:${S.habitView===v.k?c.surface:'transparent'};color:${S.habitView===v.k?c.accent:c.text2};
+      ${S.habitView===v.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${v.l}</button>`).join('')}
+  </div>`;
+}
+
+function renderHabitsToday(){
+  const c=C();
+  const done=S.habits.filter(h=>h.done).length;
+  const total=S.habits.length;
+  const pct=total?Math.round(done/total*100):0;
+
+  let h=`<div style="padding:20px;border-radius:12px;background:${c.surface};border:1px solid ${c.border};margin-bottom:16px">`;
+
+  // Progress header
+  if(total>0){
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:600;color:${c.text}">${done}/${total} completed</div>
+      <div style="font-family:${FM};font-size:12px;color:${pct===100?c.green:c.text3}">${pct}%</div>
+    </div>`;
+    h+=`<div style="height:6px;border-radius:3px;background:${c.surface2};margin-bottom:20px;overflow:hidden">
+      <div style="height:100%;border-radius:3px;background:${pct===100?c.green:c.accent};width:${pct}%;transition:width 0.3s"></div>
+    </div>`;
+  }
+
+  // Habit list
+  if(total===0){
+    h+=`<div style="text-align:center;padding:20px 0">
+      <div style="font-size:14px;color:${c.text3}">No habits yet. Add one below or in Settings.</div>
+    </div>`;
+  }
+
+  S.habits.forEach(hab=>{
+    h+=`<div onclick="toggleHabit(${hab.id})" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;margin-bottom:6px;background:${hab.done?'rgba(46,125,66,0.06)':c.surface2};border:1px solid ${hab.done?'rgba(46,125,66,0.15)':c.border};cursor:pointer;transition:all 0.15s"
+      onmouseenter="this.style.borderColor='${c.accentBorder}'" onmouseleave="this.style.borderColor='${hab.done?'rgba(46,125,66,0.15)':c.border}'">
+      <div style="width:24px;height:24px;border-radius:7px;border:2px solid ${hab.done?c.green:c.text3};background:${hab.done?c.green:'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0">${hab.done?'✓':''}</div>
+      <div style="flex:1;font-size:15px;font-weight:500;color:${hab.done?c.text3:c.text};${hab.done?'text-decoration:line-through':''}">${esc(hab.name)}</div>
+    </div>`;
+  });
+  h+='</div>';
+
+  // Add habit
+  h+=`<div style="display:flex;gap:8px">
+    <input id="habit-input" placeholder="Add a new habit…" style="flex:1;padding:12px 16px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-size:14px;outline:none" onkeydown="if(event.key==='Enter')addNewHabit()">
+    <button onclick="addNewHabit()" style="padding:12px 20px;border-radius:8px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:13px;font-weight:600">+ Add</button>
+  </div>`;
+
+  // Pomodoro stats for today
+  if(S.pomoToday.completed>0){
+    h+=`<div style="margin-top:16px;padding:14px 16px;border-radius:10px;background:${c.surface};border:1px solid ${c.border}">
+      <div style="font-family:${FM};font-size:10px;color:${c.accent};letter-spacing:2px;margin-bottom:8px;font-weight:500">🍅 TODAY'S FOCUS</div>
+      <div style="font-size:14px;color:${c.text}">${S.pomoToday.completed} pomodoros · ${S.pomoToday.totalMinutes} minutes focused</div>
+    </div>`;
+  }
+
+  return h;
+}
+
+function renderHabitsMonth(){
+  const c=C();
+  const hm=S.habitMonth;
+  const habits=hm.habits||[];
+  const byDate=hm.byDate||{};
+  const streaks=hm.streaks||{};
+  const fd=new Date(S.hvy,S.hvm,1).getDay();
+  const dim=new Date(S.hvy,S.hvm+1,0).getDate();
+  const now=new Date();
+  const today=now.getFullYear()===S.hvy&&now.getMonth()===S.hvm?now.getDate():-1;
+
+  let h=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <div><span style="font-size:22px;font-weight:700;color:${c.text}">${MONTHS[S.hvm]}</span> <span style="font-size:22px;font-weight:300;color:${c.text2}">${S.hvy}</span></div>
+    <div style="display:flex;gap:6px">
+      <button onclick="habitMonthPrev()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">&lsaquo;</button>
+      <button onclick="habitMonthToday()" style="padding:7px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-family:${FM};font-size:11px;font-weight:500">This Month</button>
+      <button onclick="habitMonthNext()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">&rsaquo;</button>
+    </div>
+  </div>`;
+
+  if(habits.length===0){
+    h+=`<div style="padding:30px;text-align:center;color:${c.text3}">No habits yet. Switch to Today view to add some.</div>`;
+    return h;
+  }
+
+  // Streak cards
+  h+=`<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">`;
+  habits.forEach(hab=>{
+    const streak=streaks[hab.id]||0;
+    h+=`<div style="padding:12px 16px;border-radius:10px;background:${c.surface};border:1px solid ${c.border};min-width:140px;flex:1">
+      <div style="font-size:13px;font-weight:600;color:${c.text};margin-bottom:4px">${esc(hab.name)}</div>
+      <div style="font-family:${FM};font-size:20px;font-weight:300;color:${streak>0?c.accent:c.text3}">${streak>0?'🔥 '+streak+' days':'No streak'}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // Heatmap per habit
+  habits.forEach(hab=>{
+    h+=`<div style="margin-bottom:16px">`;
+    h+=`<div style="font-size:13px;font-weight:600;color:${c.text};margin-bottom:8px">${esc(hab.name)}</div>`;
+    h+=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">`;
+    DAYS.forEach(d=>{h+=`<div style="text-align:center;font-family:${FM};font-size:9px;color:${c.text3};padding:2px">${d.charAt(0)}</div>`});
+    for(let i=0;i<fd;i++) h+=`<div></div>`;
+    for(let day=1;day<=dim;day++){
+      const dateStr=S.hvy+'-'+pad(S.hvm+1)+'-'+pad(day);
+      const dayData=byDate[dateStr]||{};
+      const done=dayData[hab.id]||0;
+      const isT=day===today;
+      const bg=done?c.green:(isT?'rgba(139,105,20,0.08)':c.surface2);
+      h+=`<div style="aspect-ratio:1;border-radius:4px;background:${bg};display:flex;align-items:center;justify-content:center;font-family:${FM};font-size:10px;color:${done?'#fff':c.text3};font-weight:${isT?'700':'400'}">${day}</div>`;
+    }
+    h+=`</div></div>`;
+  });
+
+  return h;
+}
+
+function renderVitamins(){
+  const c=C();
+  const slotLabels={morning:'🌅 Morning',noon:'☀️ Noon',night:'🌙 Night'};
+  const slotTimes={morning:S.vitamin_morning||'08:00',noon:S.vitamin_noon||'13:00',night:S.vitamin_night||'21:00'};
+  const grouped={morning:[],noon:[],night:[]};
+  S.vitamins.forEach(v=>{(grouped[v.time_slot]=grouped[v.time_slot]||[]).push(v)});
+
+  const total=S.vitamins.length;
+  const taken=S.vitamins.filter(v=>v.taken).length;
+  const pct=total?Math.round(taken/total*100):0;
+
+  let h='';
+
+  // Progress
+  if(total>0){
+    h+=`<div style="padding:20px;border-radius:12px;background:${c.surface};border:1px solid ${c.border};margin-bottom:16px">`;
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:600;color:${c.text}">💊 ${taken}/${total} taken</div>
+      <div style="font-family:${FM};font-size:12px;color:${pct===100?c.green:c.text3}">${pct}%</div>
+    </div>`;
+    h+=`<div style="height:6px;border-radius:3px;background:${c.surface2};overflow:hidden">
+      <div style="height:100%;border-radius:3px;background:${pct===100?c.green:c.accent};width:${pct}%;transition:width 0.3s"></div>
+    </div></div>`;
+  }
+
+  // Grouped by time slot
+  ['morning','noon','night'].forEach(slot=>{
+    const items=grouped[slot]||[];
+    if(!items.length) return;
+
+    h+=`<div style="margin-bottom:16px">`;
+    h+=`<div style="font-size:14px;font-weight:600;color:${c.text};margin-bottom:10px">${slotLabels[slot]} <span style="font-family:${FM};font-size:11px;font-weight:400;color:${c.text3}">${slotTimes[slot]}</span></div>`;
+    items.forEach(v=>{
+      h+=`<div onclick="toggleVitamin(${v.vitamin_id},'${v.time_slot}')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;margin-bottom:6px;background:${v.taken?'rgba(46,125,66,0.06)':c.surface};border:1px solid ${v.taken?'rgba(46,125,66,0.15)':c.border};cursor:pointer;transition:all 0.15s"
+        onmouseenter="this.style.borderColor='${c.accentBorder}'" onmouseleave="this.style.borderColor='${v.taken?'rgba(46,125,66,0.15)':c.border}'">
+        <div style="width:24px;height:24px;border-radius:7px;border:2px solid ${v.taken?c.green:c.text3};background:${v.taken?c.green:'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0">${v.taken?'✓':''}</div>
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:500;color:${v.taken?c.text3:c.text};${v.taken?'text-decoration:line-through':''}">${esc(v.name)}</div>
+          <div style="font-family:${FM};font-size:10px;color:${c.text3};margin-top:2px">${v.schedule_desc}${v.notes?' · '+esc(v.notes):''}</div>
+        </div>
+      </div>`;
+    });
+    h+=`</div>`;
+  });
+
+  if(total===0){
+    h+=`<div style="padding:30px;text-align:center;border-radius:12px;background:${c.surface};border:1px solid ${c.border}">
+      <div style="font-size:14px;color:${c.text3}">No vitamins configured. Add them in Settings → Manage Vitamins.</div>
+    </div>`;
+  }
+
+  return h;
+}
+
+// ══════════════════════════════════════
+// HOBBIES
+// ══════════════════════════════════════
+function renderHobbies(){
+  const c=C();
+  let h=`<div style="display:flex;gap:4px;margin-bottom:20px;background:${c.surface2};border-radius:8px;padding:3px;border:1px solid ${c.border};max-width:400px">
+    ${[{k:'chess',l:'♟️ Chess'},{k:'kannada',l:'🗣️ Kannada'},{k:'astronomy',l:'🔭 Astronomy'}].map(v=>`<button onclick="setHobbyTab('${v.k}')" style="flex:1;padding:8px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:${S.hobbyTab===v.k?'600':'400'};font-family:${FB};
+      background:${S.hobbyTab===v.k?c.surface:'transparent'};color:${S.hobbyTab===v.k?c.accent:c.text2};
+      ${S.hobbyTab===v.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${v.l}</button>`).join('')}
+  </div>`;
+  if(S.hobbyTab==='chess') h+=renderChess();
+  else if(S.hobbyTab==='kannada') h+=renderKannada();
+  else h+=renderAstro();
+  return h;
+}
+
+function renderChess(){
+  const c=C();
+  const p=S.chessPuzzle;
+  if(!p) return '<div style="text-align:center;padding:30px;color:'+c.text3+'">Loading puzzle...</div>';
+  const fen=p.fen||'';
+  const board=parseFEN(fen);
+  const turn=fen.split(' ')[1]==='w'?'White':'Black';
+  const solution=p.solution||[];
+
+  let h='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+  h+='<div><div style="font-size:16px;font-weight:600;color:'+c.text+'">♟️ Daily Chess Puzzle</div>';
+  h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text3+';margin-top:4px">'+turn+' to move · '+(S.chessSolved?'Solved! ✅':'Find the checkmate')+' · Rating: '+(p.rating||'?')+'</div></div>';
+  h+='<button onclick="fetchChessPuzzle()" style="padding:8px 16px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">New Puzzle</button></div>';
+
+  h+='<div style="display:inline-grid;grid-template-columns:repeat(8,1fr);border:2px solid '+c.text3+';border-radius:4px;overflow:hidden;max-width:400px">';
+  for(let r=0;r<8;r++){for(let cl=0;cl<8;cl++){
+    const isLight=(r+cl)%2===0;
+    const piece=board[r]?board[r][cl]:'';
+    const sq=coordToAlg(r,cl);
+    const isSel=S.chessSelected===sq;
+    const bg=isSel?'rgba(139,105,20,0.4)':isLight?'#f0d9b5':'#b58863';
+    h+='<div onclick="chessClick(\''+sq+'\','+r+','+cl+')" style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;background:'+bg+';cursor:pointer;font-size:32px;user-select:none">'+(PIECES[piece]||'')+'</div>';
+  }}
+  h+='</div>';
+
+  if(S.chessMoves.length>0) h+='<div style="margin-top:12px;font-family:'+FM+';font-size:12px;color:'+c.text2+'">Moves: '+S.chessMoves.join(', ')+'</div>';
+
+  if(!S.chessSolved){
+    h+='<div style="margin-top:12px;display:flex;gap:8px">';
+    h+='<button onclick="chessShowHint()" style="padding:6px 14px;border-radius:6px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">💡 Hint</button>';
+    h+='<button onclick="chessShowSolution()" style="padding:6px 14px;border-radius:6px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">👁 Show Solution</button></div>';
+  } else {
+    h+='<div style="margin-top:12px;padding:12px;border-radius:8px;background:rgba(46,125,66,0.08);border:1px solid rgba(46,125,66,0.15)">';
+    h+='<div style="font-size:14px;font-weight:600;color:'+c.green+'">Excellent! Puzzle solved! 🎉</div>';
+    h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text3+';margin-top:4px">Puzzles solved: '+(S.hobbyProgress.chess||0)+'</div></div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+function renderKannada(){
+  const c=C();
+  let h='';
+
+  // Sub-tabs
+  h+='<div style="display:flex;gap:4px;margin-bottom:20px;background:'+c.surface2+';border-radius:8px;padding:3px;border:1px solid '+c.border+';max-width:360px">';
+  [{k:'translate',l:'🔄 Translate'},{k:'phrases',l:'📚 My Phrases'},{k:'lessons',l:'📖 Lessons'}].forEach(v=>{
+    h+='<button onclick="S.phrasesView=\''+v.k+'\';renderContent()" style="flex:1;padding:7px 12px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:'+(S.phrasesView===v.k?'600':'400')+';font-family:'+FB+';background:'+(S.phrasesView===v.k?c.surface:'transparent')+';color:'+(S.phrasesView===v.k?c.accent:c.text2)+'">'+v.l+'</button>';
+  });
+  h+='</div>';
+
+  if(S.phrasesView==='translate'){
+    // Translator
+    h+='<div style="padding:22px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:18px;font-weight:600;color:'+c.text+';margin-bottom:4px">English → ಕನ್ನಡ</div>';
+    h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text3+';margin-bottom:16px">Type any sentence and get Kannada translation with pronunciation</div>';
+
+    h+='<textarea id="kan-input" placeholder="Type in English... e.g. Where is the nearest bus stop?" style="width:100%;padding:14px 16px;border-radius:10px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text+';font-size:15px;outline:none;resize:vertical;min-height:80px;font-family:'+FB+'" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();translateKannada()}">'+(S.kannadaInput||'')+'</textarea>';
+
+    h+='<button onclick="translateKannada()" style="margin-top:10px;padding:10px 24px;border-radius:8px;border:none;background:'+c.accent+';color:#fff;cursor:pointer;font-family:'+FM+';font-size:13px;font-weight:600">'+(S.kannadaLoading?'Translating...':'Translate →')+'</button>';
+
+    // Result
+    if(S.kannadaResult){
+      const r=S.kannadaResult;
+      h+='<div style="margin-top:20px;padding:20px;border-radius:12px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:8px">KANNADA</div>';
+      h+='<div style="font-size:28px;color:'+c.accent+';line-height:1.6;margin-bottom:12px">'+esc(r.kannada)+'</div>';
+      if(r.transliteration){
+        h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:4px">PRONUNCIATION</div>';
+        h+='<div style="font-size:16px;color:'+c.text2+';font-style:italic;margin-bottom:12px">'+esc(r.transliteration)+'</div>';
+      }
+      h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:4px">ENGLISH</div>';
+      h+='<div style="font-size:14px;color:'+c.text3+'">'+esc(r.original)+'</div>';
+
+      h+='<div style="display:flex;gap:8px;margin-top:14px">';
+      h+='<button onclick="saveKannadaPhrase()" style="padding:8px 16px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">⭐ Save to My Phrases</button>';
+      h+='<button onclick="speakKannada()" style="padding:8px 16px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">🔊 Listen</button>';
+      h+='</div></div>';
+    }
+    h+='</div>';
+
+  } else if(S.phrasesView==='phrases'){
+    // Saved phrases
+    h+='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:16px;font-weight:600;color:'+c.text+';margin-bottom:16px">📚 My Phrasebook ('+S.savedPhrases.length+' phrases)</div>';
+
+    if(S.savedPhrases.length===0){
+      h+='<div style="text-align:center;padding:30px 0;color:'+c.text3+'">No saved phrases yet. Translate something and save it!</div>';
+    }
+    S.savedPhrases.forEach(p=>{
+      h+='<div style="padding:16px;border-radius:10px;margin-bottom:8px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+      h+='<div style="flex:1"><div style="font-size:22px;color:'+c.accent+';margin-bottom:4px">'+esc(p.kannada)+'</div>';
+      if(p.transliteration) h+='<div style="font-size:13px;color:'+c.text2+';font-style:italic;margin-bottom:4px">'+esc(p.transliteration)+'</div>';
+      h+='<div style="font-size:13px;color:'+c.text3+'">'+esc(p.english)+'</div></div>';
+      h+='<div style="display:flex;gap:6px;flex-shrink:0">';
+      h+='<button onclick="speakPhrase('+p.id+')" style="padding:4px 10px;border-radius:5px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-size:12px">🔊</button>';
+      h+='<button onclick="deletePhrase('+p.id+')" style="padding:4px 10px;border-radius:5px;border:none;background:rgba(192,57,43,0.06);color:'+c.red+';cursor:pointer;font-size:12px;opacity:0.5">×</button>';
+      h+='</div></div></div>';
+    });
+    h+='</div>';
+
+  } else {
+    // Lessons (keep existing)
+    const lesson=KANNADA_LESSONS[S.kannadaLesson]||KANNADA_LESSONS[0];
+    const total=KANNADA_LESSONS.length;
+    h+='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+    h+='<div><div style="font-size:16px;font-weight:600;color:'+c.text+'">📖 Lesson '+(S.kannadaLesson+1)+'/'+total+'</div>';
+    h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text3+';margin-top:4px">'+lesson.title+'</div></div></div>';
+
+    h+='<div style="height:4px;border-radius:2px;background:'+c.surface2+';margin-bottom:20px;overflow:hidden"><div style="height:100%;border-radius:2px;background:'+c.accent+';width:'+((S.kannadaLesson+1)/total*100)+'%"></div></div>';
+
+    lesson.items.forEach(item=>{
+      h+='<div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:10px;margin-bottom:8px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<div style="font-size:42px;min-width:70px;text-align:center;color:'+c.accent+'">'+item.kan+'</div>';
+      h+='<div style="flex:1"><div style="font-size:16px;font-weight:600;color:'+c.text+'">'+item.trans+'</div>';
+      h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text2+';margin-top:2px">🔊 '+item.sound+'</div>';
+      h+='<div style="font-family:'+FM+';font-size:12px;color:'+c.text3+';margin-top:4px">'+item.word+'</div></div></div>';
+    });
+
+    h+='<div style="display:flex;justify-content:space-between;margin-top:16px">';
+    h+='<button onclick="kannadaPrev()" style="padding:8px 18px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+(S.kannadaLesson>0?c.text:c.text3)+';cursor:pointer;font-family:'+FM+';font-size:12px"'+(S.kannadaLesson===0?' disabled':'')+'>← Previous</button>';
+    h+='<button onclick="kannadaComplete()" style="padding:8px 18px;border-radius:7px;border:none;background:'+c.accent+';color:#fff;cursor:pointer;font-family:'+FM+';font-size:12px;font-weight:600">✓ Done</button>';
+    h+='<button onclick="kannadaNext()" style="padding:8px 18px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+(S.kannadaLesson<total-1?c.text:c.text3)+';cursor:pointer;font-family:'+FM+';font-size:12px"'+(S.kannadaLesson>=total-1?' disabled':'')+'>Next →</button></div>';
+    h+='</div>';
+  }
+  return h;
+}
+
+function renderAstro(){
+  const c=C();
+  let h='';
+
+  // Sub-tabs
+  h+='<div style="display:flex;gap:4px;margin-bottom:20px;background:'+c.surface2+';border-radius:8px;padding:3px;border:1px solid '+c.border+';max-width:480px">';
+  [{k:'learn',l:'📖 Learn'},{k:'solar',l:'☀️ Solar System'},{k:'tonight',l:'🌙 Tonight\'s Sky'},{k:'scope',l:'🔭 Telescope'}].forEach(v=>{
+    h+='<button onclick="S.astroView=\''+v.k+'\';renderContent()" style="flex:1;padding:7px 10px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:'+(S.astroView===v.k?'600':'400')+';font-family:'+FB+';background:'+(S.astroView===v.k?c.surface:'transparent')+';color:'+(S.astroView===v.k?c.accent:c.text2)+'">'+v.l+'</button>';
+  });
+  h+='</div>';
+
+  if(S.astroView==='learn'){
+    // Enhanced lessons
+    const lesson=ASTRO_LESSONS[S.astroLesson]||ASTRO_LESSONS[0];
+    const total=ASTRO_LESSONS.length;
+
+    h+='<div style="padding:22px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    h+='<div style="font-size:20px;font-weight:700;color:'+c.text+'">'+lesson.title+'</div>';
+    h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+'">'+(S.astroLesson+1)+'/'+total+'</div></div>';
+    h+='<div style="height:3px;border-radius:2px;background:'+c.surface2+';margin-bottom:20px;overflow:hidden"><div style="height:100%;border-radius:2px;background:'+c.accent+';width:'+((S.astroLesson+1)/total*100)+'%"></div></div>';
+
+    h+='<div style="font-size:15px;line-height:1.9;color:'+c.text+';margin-bottom:24px">'+lesson.content+'</div>';
+
+    h+='<div style="padding:18px;border-radius:10px;background:'+c.surface2+';border:1px solid '+c.border+';margin-bottom:16px">';
+    h+='<div style="font-size:13px;font-weight:600;color:'+c.accent+';margin-bottom:12px">✨ Did you know?</div>';
+    lesson.facts.forEach(f=>{h+='<div style="font-size:14px;color:'+c.text+';margin-bottom:8px;padding-left:20px;position:relative;line-height:1.6"><span style="position:absolute;left:0;color:'+c.accent+'">•</span>'+f+'</div>';});
+    h+='</div>';
+
+    h+='<div style="padding:18px;border-radius:10px;background:rgba(139,105,20,0.06);border:1px solid '+c.accentBorder+'">';
+    h+='<div style="font-size:13px;font-weight:600;color:'+c.accent+';margin-bottom:8px">🔭 Observe from Udupi</div>';
+    h+='<div style="font-size:14px;color:'+c.text+';line-height:1.7">'+lesson.observe+'</div></div>';
+
+    h+='<div style="display:flex;justify-content:space-between;margin-top:20px">';
+    h+='<button onclick="astroPrev()" style="padding:8px 18px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+(S.astroLesson>0?c.text:c.text3)+';cursor:pointer;font-family:'+FM+';font-size:12px"'+(S.astroLesson===0?' disabled':'')+'>← Previous</button>';
+    h+='<button onclick="astroComplete()" style="padding:8px 18px;border-radius:7px;border:none;background:'+c.accent+';color:#fff;cursor:pointer;font-family:'+FM+';font-size:12px;font-weight:600">✓ Done</button>';
+    h+='<button onclick="astroNext()" style="padding:8px 18px;border-radius:7px;border:1px solid '+c.border+';background:'+c.surface+';color:'+(S.astroLesson<total-1?c.text:c.text3)+';cursor:pointer;font-family:'+FM+';font-size:12px"'+(S.astroLesson>=total-1?' disabled':'')+'>Next →</button></div>';
+    h+='</div>';
+
+  } else if(S.astroView==='solar'){
+    // Interactive Solar System
+    const planets=[
+      {name:'Mercury',dist:0.4,size:8,color:'#a0a0a0',period:'88 days',temp:'−180 to 430°C',moons:0,desc:'Smallest planet, no atmosphere, extreme temperatures'},
+      {name:'Venus',dist:0.7,size:12,color:'#e8c36a',period:'225 days',temp:'462°C',moons:0,desc:'Hottest planet, thick toxic atmosphere, rotates backwards'},
+      {name:'Earth',dist:1.0,size:13,color:'#4a8ec9',period:'365 days',temp:'15°C avg',moons:1,desc:'Our home! Only known planet with life'},
+      {name:'Mars',dist:1.5,size:10,color:'#c44',period:'687 days',temp:'−65°C avg',moons:2,desc:'The Red Planet, has the largest volcano — Olympus Mons'},
+      {name:'Jupiter',dist:5.2,size:28,color:'#d4a03c',period:'12 years',temp:'−110°C',moons:95,desc:'Largest planet, Great Red Spot storm, visible through your Celestron'},
+      {name:'Saturn',dist:9.5,size:24,color:'#e8c36a',period:'29 years',temp:'−140°C',moons:146,desc:'Beautiful rings of ice! Stunning through your telescope'},
+      {name:'Uranus',dist:19.2,size:18,color:'#5aa0a0',period:'84 years',temp:'−195°C',moons:28,desc:'Tilted on its side, ice giant, faint rings'},
+      {name:'Neptune',dist:30.0,size:17,color:'#4060c0',period:'165 years',temp:'−200°C',moons:16,desc:'Windiest planet (2000 km/h), deep blue color'},
+    ];
+
+    h+='<div style="padding:22px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:18px;font-weight:700;color:'+c.text+';margin-bottom:4px">☀️ The Solar System</div>';
+    h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.text3+';margin-bottom:20px">Click any planet to learn more</div>';
+
+    // Visual representation
+    h+='<div style="position:relative;overflow-x:auto;padding:20px 0;margin-bottom:20px">';
+    h+='<div style="display:flex;align-items:center;gap:0;min-width:700px;height:120px;position:relative">';
+    // Sun
+    h+='<div style="width:40px;height:40px;border-radius:50%;background:radial-gradient(circle,#ffdd44,#ff8800);box-shadow:0 0 20px rgba(255,200,0,0.4);flex-shrink:0;margin-right:10px"></div>';
+
+    planets.forEach((p,i)=>{
+      const gap=Math.max(20,p.dist*8);
+      h+='<div onclick="S.selectedPlanet='+i+';renderContent()" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;margin-left:'+gap+'px;flex-shrink:0" title="'+p.name+'">';
+      h+='<div style="width:'+p.size+'px;height:'+p.size+'px;border-radius:50%;background:'+p.color+';transition:transform 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.2)" onmouseenter="this.style.transform=\'scale(1.3)\'" onmouseleave="this.style.transform=\'scale(1)\'"></div>';
+      if(p.name==='Saturn') h+='<div style="width:'+(p.size+16)+'px;height:4px;border-radius:2px;background:rgba(232,195,106,0.5);margin-top:-'+(p.size/2+2)+'px;margin-bottom:'+(p.size/2-2)+'px"></div>';
+      h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';margin-top:6px">'+p.name+'</div>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+
+    // Selected planet detail
+    const sel=S.selectedPlanet!==undefined?planets[S.selectedPlanet]:null;
+    if(sel){
+      h+='<div style="padding:18px;border-radius:10px;background:'+c.surface2+';border:1px solid '+c.border+';border-left:4px solid '+sel.color+'">';
+      h+='<div style="font-size:18px;font-weight:700;color:'+c.text+';margin-bottom:8px">'+sel.name+'</div>';
+      h+='<div style="font-size:14px;color:'+c.text+';line-height:1.6;margin-bottom:12px">'+sel.desc+'</div>';
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
+      [{l:'Orbital period',v:sel.period},{l:'Temperature',v:sel.temp},{l:'Moons',v:sel.moons}].forEach(d=>{
+        h+='<div style="padding:10px;border-radius:8px;background:'+c.surface+';text-align:center">';
+        h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';margin-bottom:4px">'+d.l+'</div>';
+        h+='<div style="font-size:14px;font-weight:600;color:'+c.accent+'">'+d.v+'</div></div>';
+      });
+      h+='</div></div>';
+    } else {
+      h+='<div style="text-align:center;padding:16px;color:'+c.text3+';font-size:13px">Click a planet above to see details</div>';
+    }
+    h+='</div>';
+
+  } else if(S.astroView==='tonight'){
+    // Tonight's sky from Udupi
+    const now=new Date();
+    const month=now.getMonth();
+    const monthNames=MONTHS;
+
+    const seasonal=[
+      {months:[11,0,1],title:'Winter Sky',constellations:['Orion (the Hunter) — look for 3 stars in a belt','Taurus (the Bull) — bright orange star Aldebaran','Gemini (the Twins) — Castor and Pollux','Canis Major — Sirius, the brightest star in the sky','Pleiades — a beautiful star cluster, stunning in your Celestron'],
+       planets:'Jupiter and Saturn are often visible in winter evenings.',challenges:[
+        {text:'Point your Celestron at the Orion Nebula (M42) — the fuzzy "star" in Orion\'s sword. You\'ll see a glowing cloud where new stars are being born!',imgQ:'Orion Nebula'},
+        {text:'Find the Pleiades (M45) in Taurus — a stunning cluster of blue-white stars. Use your lowest magnification to fit them all in view.',imgQ:'Pleiades'},
+        {text:'Look for the Double Cluster in Perseus — two open clusters side by side. Gorgeous at low power!',imgQ:'Double Cluster'},
+        {text:'Find Sirius in Canis Major — the brightest star in the night sky. Notice its brilliant blue-white color through your Celestron.',imgQ:'Sirius'},
+        {text:'Try spotting the Crab Nebula (M1) in Taurus — a supernova remnant from 1054 AD. Faint but historic!',imgQ:'Crab Nebula'},
+        {text:'Look at the star Betelgeuse in Orion — a red supergiant that could explode as a supernova any time in the next 100,000 years.',imgQ:'Betelgeuse'},
+       ]},
+      {months:[2,3,4],title:'Spring Sky',constellations:['Leo (the Lion) — bright star Regulus','Virgo — look for Spica, a blue-white star','Ursa Major (Great Bear) — the Big Dipper is high up','Boötes — follow the arc of the Big Dipper\'s handle to find Arcturus','Hydra — the longest constellation, snaking across the sky'],
+       planets:'Mars often appears as a red dot in the spring sky.',challenges:[
+        {text:'Try finding the Beehive Cluster (M44) in Cancer — a beautiful open star cluster. Use low magnification on your Celestron.',imgQ:'Beehive Cluster'},
+        {text:'Hunt for the Whirlpool Galaxy (M51) near the Big Dipper — a face-on spiral galaxy. You might see its spiral arms!',imgQ:'Whirlpool Galaxy'},
+        {text:'Find the Sombrero Galaxy (M104) in Virgo — it has a distinctive hat shape with a dark dust lane.',imgQ:'Sombrero Galaxy'},
+        {text:'Look at Mizar and Alcor in the Big Dipper\'s handle — a famous double star. Can you split them in your Celestron?',imgQ:'Mizar'},
+        {text:'Try spotting the Leo Triplet — three galaxies (M65, M66, NGC 3628) in one view. A challenging but rewarding target!',imgQ:'Leo Triplet'},
+        {text:'Find Arcturus in Boötes — follow the arc of the Big Dipper\'s handle. It\'s an orange giant 37 light-years away.',imgQ:'Arcturus'},
+       ]},
+      {months:[5,6,7],title:'Monsoon/Summer Sky',constellations:['Scorpius — bright red Antares marks the heart','Sagittarius — the center of our Milky Way is in this direction','Lyra — Vega, one of the brightest summer stars','Cygnus (the Swan) — look for the Northern Cross','Summer Triangle — Vega, Deneb, and Altair form a huge triangle'],
+       planets:'The Milky Way is best visible in summer from dark spots near Udupi.',challenges:[
+        {text:'On clear nights, point your Celestron toward Sagittarius — you\'re looking at the center of our galaxy! Look for M8 (Lagoon Nebula).',imgQ:'Lagoon Nebula'},
+        {text:'Find the Ring Nebula (M57) in Lyra — a tiny smoke ring in space. A dying star blew off its outer layers!',imgQ:'Ring Nebula'},
+        {text:'Look for the Trifid Nebula (M20) near the Lagoon Nebula — it shows three dark lanes dividing glowing gas.',imgQ:'Trifid Nebula'},
+        {text:'Find Albireo in Cygnus — a beautiful double star. One is gold, the other blue. Stunning color contrast!',imgQ:'Albireo'},
+        {text:'Try spotting globular cluster M13 in Hercules — a ball of 300,000 stars! Looks like a fuzzy snowball.',imgQ:'Messier 13'},
+        {text:'Look for the Eagle Nebula (M16) in Serpens — home to the famous "Pillars of Creation" photographed by Hubble.',imgQ:'Eagle Nebula'},
+       ]},
+      {months:[8,9,10],title:'Autumn Sky',constellations:['Pegasus — a large square of four stars','Andromeda — home to the Andromeda Galaxy (M31)','Aquarius — faint but large constellation','Cassiopeia — distinctive W-shape, easy to spot','Pisces — look near the great square of Pegasus'],
+       planets:'The Andromeda Galaxy is best observed in autumn — the most distant object visible to the naked eye!',challenges:[
+        {text:'Find the Andromeda Galaxy (M31): from the square of Pegasus, hop to Andromeda constellation. M31 appears as a fuzzy smudge — that\'s 2.5 MILLION light-years away!',imgQ:'Andromeda Galaxy'},
+        {text:'Look for the Triangulum Galaxy (M33) — the third largest in our Local Group. Fainter than Andromeda but beautiful.',imgQ:'Triangulum Galaxy'},
+        {text:'Find the Perseus Double Cluster (NGC 869 & 884) — two rich star clusters side by side. Best at low power.',imgQ:'Double Cluster'},
+        {text:'Spot the Pacman Nebula (NGC 281) in Cassiopeia — named for its resemblance to the video game character!',imgQ:'NGC 281'},
+        {text:'Try the Owl Cluster (NGC 457) in Cassiopeia — also called the ET Cluster because it looks like a stick figure with outstretched arms!',imgQ:'NGC 457'},
+        {text:'Find the blue star Fomalhaut in Piscis Austrinus — one of the brightest stars in autumn. It has a famous debris disk!',imgQ:'Fomalhaut'},
+       ]},
+    ];
+
+    const current=seasonal.find(s=>s.months.includes(month))||seasonal[0];
+
+    h+='<div style="padding:22px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:20px;font-weight:700;color:'+c.text+';margin-bottom:4px">🌙 Tonight\'s Sky from Udupi</div>';
+    h+='<div style="font-family:'+FM+';font-size:12px;color:'+c.text3+';margin-bottom:20px">'+monthNames[month]+' '+now.getFullYear()+' · '+current.title+' · 13.3°N, 74.7°E</div>';
+
+    // Moon phase (simplified)
+    const moonDay=Math.floor((now.getTime()/86400000-10.5)%29.53);
+    const moonPhases=['🌑 New Moon','🌒 Waxing Crescent','🌓 First Quarter','🌔 Waxing Gibbous','🌕 Full Moon','🌖 Waning Gibbous','🌗 Last Quarter','🌘 Waning Crescent'];
+    const moonPhase=moonPhases[Math.floor(moonDay/3.7)]||moonPhases[0];
+    const goodViewing=moonDay>20||moonDay<8;
+
+    h+='<div style="display:flex;gap:12px;margin-bottom:20px">';
+    h+='<div style="flex:1;padding:14px;border-radius:10px;background:'+c.surface2+';border:1px solid '+c.border+';text-align:center">';
+    h+='<div style="font-size:32px;margin-bottom:4px">'+moonPhase.split(' ')[0]+'</div>';
+    h+='<div style="font-size:12px;font-weight:600;color:'+c.text+'">'+moonPhase.split(' ').slice(1).join(' ')+'</div></div>';
+    h+='<div style="flex:1;padding:14px;border-radius:10px;background:'+(goodViewing?'rgba(46,125,66,0.06)':'rgba(139,105,20,0.06)')+';border:1px solid '+(goodViewing?'rgba(46,125,66,0.15)':c.accentBorder)+';text-align:center">';
+    h+='<div style="font-size:32px;margin-bottom:4px">'+(goodViewing?'⭐':'🌤')+'</div>';
+    h+='<div style="font-size:12px;font-weight:600;color:'+(goodViewing?c.green:c.accent)+'">'+(goodViewing?'Great for stargazing!':'Moonlight may wash out faint objects')+'</div></div>';
+    h+='</div>';
+
+    // Visible constellations
+    h+='<div style="font-size:15px;font-weight:600;color:'+c.text+';margin-bottom:12px">Visible Constellations</div>';
+    current.constellations.forEach(con=>{
+      const parts=con.split(' — ');
+      h+='<div style="padding:12px 16px;border-radius:8px;margin-bottom:6px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<span style="font-size:14px;font-weight:600;color:'+c.text+'">'+parts[0]+'</span>';
+      if(parts[1]) h+='<span style="font-size:13px;color:'+c.text2+'"> — '+parts[1]+'</span>';
+      h+='</div>';
+    });
+
+    h+='<div style="padding:14px;border-radius:10px;background:'+c.surface2+';border:1px solid '+c.border+';margin-top:12px;margin-bottom:12px">';
+    h+='<div style="font-size:12px;font-weight:600;color:'+c.accent+';margin-bottom:6px">🪐 Planets</div>';
+    h+='<div style="font-size:13px;color:'+c.text+';line-height:1.6">'+current.planets+'</div></div>';
+
+    h+='<div style="padding:14px;border-radius:10px;background:rgba(139,105,20,0.06);border:1px solid '+c.accentBorder+'">';
+    const weekNum=Math.floor((now.getTime()/604800000));
+    const challenges=current.challenges||[];
+    const challenge=challenges[weekNum%challenges.length]||challenges[0];
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    h+='<div style="font-size:12px;font-weight:600;color:'+c.accent+'">🔭 This Week\'s Celestron Challenge</div>';
+    const chalKey='challenge-'+challenge.imgQ.replace(/\s/g,'');
+    const chalImg=S.astroImages[chalKey];
+    if(!chalImg) h+='<button onclick="fetchAstroImage(\''+challenge.imgQ+'\',\''+chalKey+'\')" style="font-family:'+FM+';font-size:9px;padding:3px 10px;border-radius:5px;border:1px solid '+c.accentBorder+';background:transparent;color:'+c.accent+';cursor:pointer">📷 Show me</button>';
+    h+='</div>';
+    h+='<div style="font-size:13px;color:'+c.text+';line-height:1.6">'+challenge.text+'</div>';
+    if(chalImg==='loading'){
+      h+='<div style="margin-top:10px;padding:20px;text-align:center;color:'+c.text3+';font-family:'+FM+';font-size:11px">Loading NASA image...</div>';
+    } else if(chalImg&&chalImg.image){
+      const wikiUrl='https://en.wikipedia.org/wiki/'+encodeURIComponent(chalImg.title.replace(/\s/g,'_'));
+      h+='<a href="'+wikiUrl+'" target="_blank" style="display:block;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid '+c.border+';text-decoration:none;transition:opacity 0.15s" onmouseenter="this.style.opacity=0.9" onmouseleave="this.style.opacity=1">';
+      h+='<img src="'+chalImg.image+'" alt="'+esc(chalImg.title)+'" style="width:100%;max-height:280px;object-fit:cover;display:block">';
+      h+='<div style="padding:8px 12px;background:'+c.surface+'">';
+      h+='<div style="font-size:11px;font-weight:600;color:'+c.text+'">'+esc(chalImg.title)+' ↗</div>';
+      if(chalImg.description) h+='<div style="font-size:10px;color:'+c.text3+';margin-top:2px;line-height:1.4">'+esc(chalImg.description.slice(0,150))+(chalImg.description.length>150?'...':'')+'</div>';
+      h+='<div style="font-family:'+FM+';font-size:8px;color:'+c.text3+';margin-top:4px">📷 Wikipedia — tap to read more</div>';
+      h+='</div></a>';
+    } else if(chalImg&&!chalImg.image){
+      h+='<div style="margin-top:10px;padding:12px;border-radius:8px;background:'+c.surface2+';font-size:11px;color:'+c.text3+'">No image found. Try <a href="https://commons.wikimedia.org" target="_blank" style="color:'+c.accent+'">commons.wikimedia.org</a></div>';
+    }
+    h+='</div>';
+    h+='</div>';
+
+  } else {
+    // Telescope guide
+    h+='<div style="padding:22px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:20px;font-weight:700;color:'+c.text+';margin-bottom:16px">🔭 Your Celestron — Quick Guide</div>';
+
+    const tips=[
+      {icon:'1️⃣',title:'Set Up',text:'Place telescope on a stable surface outside. Let it cool down for 20 minutes — temperature differences cause blurry views.'},
+      {icon:'2️⃣',title:'Start Low',text:'Always begin with your lowest magnification eyepiece (highest number, e.g. 25mm). This gives the widest field of view to find objects.'},
+      {icon:'3️⃣',title:'Find & Center',text:'Use the finderscope to locate your target. Center it in the finderscope first, then look through the main eyepiece.'},
+      {icon:'4️⃣',title:'Zoom In',text:'Once centered, swap to a higher magnification eyepiece (lower number, e.g. 10mm). Re-center if needed.'},
+      {icon:'5️⃣',title:'Be Patient',text:'Your eyes take 20-30 minutes to fully adapt to darkness. Avoid phone screens (use red light mode if needed).'},
+    ];
+
+    tips.forEach(t=>{
+      h+='<div style="display:flex;gap:14px;padding:14px;border-radius:10px;margin-bottom:8px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<div style="font-size:24px;flex-shrink:0">'+t.icon+'</div>';
+      h+='<div><div style="font-size:14px;font-weight:600;color:'+c.text+';margin-bottom:4px">'+t.title+'</div>';
+      h+='<div style="font-size:13px;color:'+c.text2+';line-height:1.6">'+t.text+'</div></div></div>';
+    });
+
+    h+='<div style="margin-top:16px;font-size:15px;font-weight:600;color:'+c.text+';margin-bottom:12px">Best Targets for Beginners</div>';
+    const targets=[
+      {name:'The Moon',diff:'Easy',icon:'🌙',tip:'Best viewed along the terminator (day/night line). Craters pop with shadow detail!',q:'Moon'},
+      {name:'Jupiter',diff:'Easy',icon:'🪐',tip:'Look for 4 tiny dots in a line — those are the Galilean moons. Cloud bands visible on good nights.',q:'Jupiter'},
+      {name:'Saturn',diff:'Easy',icon:'🪐',tip:'Rings visible even at 30x magnification. The Cassini Division (gap in rings) needs 100x+.',q:'Saturn'},
+      {name:'Venus',diff:'Easy',icon:'⭐',tip:'Shows phases like the Moon! Best at dawn or dusk. Very bright.',q:'Venus'},
+      {name:'Mars',diff:'Medium',icon:'🔴',tip:'Look for the polar ice cap as a white dot. Best during opposition years.',q:'Mars'},
+      {name:'Orion Nebula (M42)',diff:'Medium',icon:'🌌',tip:'Fuzzy patch in Orion\'s sword. Use low power. You\'re seeing a stellar nursery!',q:'Orion Nebula'},
+      {name:'Andromeda Galaxy (M31)',diff:'Medium',icon:'🌀',tip:'Faint fuzzy smudge. Use lowest magnification. That glow is 2.5 million light-years away.',q:'Andromeda Galaxy'},
+      {name:'Pleiades (M45)',diff:'Easy',icon:'✨',tip:'Beautiful star cluster. Low magnification shows dozens of blue-white stars.',q:'Pleiades'},
+    ];
+
+    targets.forEach(t=>{
+      const key='target-'+t.name.replace(/\s/g,'');
+      const img=S.astroImages[key];
+      const diffColor=t.diff==='Easy'?c.green:c.amber;
+      h+='<div style="padding:14px;border-radius:10px;margin-bottom:8px;background:'+c.surface2+';border:1px solid '+c.border+'">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+      h+='<div style="font-size:14px;font-weight:600;color:'+c.text+'">'+t.icon+' '+t.name+'</div>';
+      h+='<div style="display:flex;gap:6px;align-items:center">';
+      if(!img) h+='<button onclick="fetchAstroImage(\''+t.q+'\',\''+key+'\')" style="font-family:'+FM+';font-size:9px;padding:3px 10px;border-radius:5px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.accent+';cursor:pointer">📷 Show me</button>';
+      h+='<span style="font-family:'+FM+';font-size:9px;padding:3px 10px;border-radius:5px;background:'+diffColor+'18;color:'+diffColor+'">'+t.diff+'</span></div></div>';
+      h+='<div style="font-size:13px;color:'+c.text2+';line-height:1.5">'+t.tip+'</div>';
+      if(img==='loading'){
+        h+='<div style="margin-top:10px;padding:20px;text-align:center;color:'+c.text3+';font-family:'+FM+';font-size:11px">Loading NASA image...</div>';
+      } else if(img&&img.image){
+        const wikiUrl='https://en.wikipedia.org/wiki/'+encodeURIComponent(img.title.replace(/\s/g,'_'));
+        h+='<a href="'+wikiUrl+'" target="_blank" style="display:block;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid '+c.border+';text-decoration:none;transition:opacity 0.15s" onmouseenter="this.style.opacity=0.9" onmouseleave="this.style.opacity=1">';
+        h+='<img src="'+img.image+'" alt="'+esc(img.title)+'" style="width:100%;max-height:250px;object-fit:cover;display:block">';
+        h+='<div style="padding:8px 12px;background:'+c.surface+'">';
+        h+='<div style="font-size:11px;font-weight:600;color:'+c.text+'">'+esc(img.title)+' ↗</div>';
+        if(img.description) h+='<div style="font-size:10px;color:'+c.text3+';margin-top:2px;line-height:1.4">'+esc(img.description.slice(0,150))+(img.description.length>150?'...':'')+'</div>';
+        h+='<div style="font-family:'+FM+';font-size:8px;color:'+c.text3+';margin-top:4px">📷 Wikipedia — tap to read more</div>';
+        h+='</div></a>';
+      } else if(img&&!img.image){
+        h+='<div style="margin-top:10px;padding:12px;border-radius:8px;background:'+c.surface2+';font-size:11px;color:'+c.text3+'">No image found. Try <a href="https://commons.wikimedia.org" target="_blank" style="color:'+c.accent+'">commons.wikimedia.org</a></div>';
+      }
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  return h;
+}
+
+// ── KAAYA (Weight Tracker) ──
+async function fetchWeight(){try{const r=await fetch(API+'/weight?period='+S.weightPeriod);S.weightData=await r.json()}catch(e){}renderContent()}
+async function logWeight(weight,date){
+  await fetch(API+'/weight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weight:parseFloat(weight),date})});
+  fetchWeight();
+}
+
+function renderKaaya(){
+  const c=C();
+  const w=S.weightData;
+  const logs=w.logs||[];
+  const today=new Date().toLocaleDateString('en-CA');
+  const todayLog=logs.find(l=>l.date===today);
+
+  let h='';
+
+  // Log today's weight
+  h+='<div style="padding:22px;border-radius:14px;background:'+c.surface+';border:1px solid '+c.border+';margin-bottom:20px">';
+  h+='<div style="font-size:20px;font-weight:700;color:'+c.text+';margin-bottom:16px">⚖️ Log Weight</div>';
+  h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">';
+  h+='<input id="weight-input" type="number" step="0.1" placeholder="e.g. 72.5" value="'+(todayLog?todayLog.weight:'')+'" style="width:140px;padding:12px 16px;border-radius:8px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text+';font-size:18px;font-family:'+FM+';outline:none" onkeydown="if(event.key===\'Enter\')logWeightFromInput()">';
+  h+='<span style="font-size:14px;color:'+c.text2+'">kg</span>';
+  h+='<input id="weight-date" type="date" value="'+today+'" style="padding:10px 12px;border-radius:8px;border:1px solid '+c.border+';background:'+c.surface2+';color:'+c.text+';font-family:'+FM+';font-size:12px;outline:none">';
+  h+='<button onclick="logWeightFromInput()" style="padding:10px 20px;border-radius:8px;border:none;background:'+c.accent+';color:#fff;cursor:pointer;font-family:'+FM+';font-size:13px;font-weight:600">Save</button>';
+  h+='</div>';
+  if(todayLog) h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.green+';margin-top:8px">✓ Today\'s weight: '+todayLog.weight+' kg</div>';
+  h+='</div>';
+
+  // Stats cards
+  const goal=parseFloat(S.weight_goal)||70;
+  if(logs.length>0){
+    const latest=w.latest?w.latest.weight:0;
+    const toGoal=+(latest-goal).toFixed(1);
+    const goalMet=latest<=goal;
+
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">';
+    const stats=[
+      {label:'Latest',value:latest+' kg',color:c.text},
+      {label:'Goal',value:goal+' kg',color:c.accent},
+      {label:'To Goal',value:(toGoal>0?toGoal+' kg to go':goalMet?'Goal reached!':''),color:goalMet?c.green:c.amber},
+    ];
+    stats.forEach(s=>{
+      h+='<div style="padding:14px;border-radius:10px;background:'+c.surface+';border:1px solid '+c.border+';text-align:center">';
+      h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';letter-spacing:1px;margin-bottom:6px">'+s.label.toUpperCase()+'</div>';
+      h+='<div style="font-size:16px;font-weight:600;color:'+s.color+'">'+s.value+'</div></div>';
+    });
+    h+='</div>';
+
+    // Progress bar to goal
+    if(!goalMet&&w.count>1){
+      const firstW=logs[0].weight;
+      const totalDrop=firstW-goal;
+      const dropped=firstW-latest;
+      const pct=totalDrop>0?Math.min(100,Math.max(0,Math.round(dropped/totalDrop*100))):0;
+      h+='<div style="padding:14px 18px;border-radius:10px;background:'+c.surface+';border:1px solid '+c.border+';margin-bottom:12px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+      h+='<span style="font-size:13px;color:'+c.text+'">Progress to goal</span>';
+      h+='<span style="font-family:'+FM+';font-size:12px;color:'+c.accent+'">'+pct+'%</span></div>';
+      h+='<div style="height:8px;border-radius:4px;background:'+c.surface2+';overflow:hidden">';
+      h+='<div style="height:100%;border-radius:4px;background:'+c.accent+';width:'+pct+'%;transition:width 0.3s"></div></div>';
+      h+='<div style="display:flex;justify-content:space-between;margin-top:6px">';
+      h+='<span style="font-family:'+FM+';font-size:9px;color:'+c.text3+'">Start: '+firstW+' kg</span>';
+      h+='<span style="font-family:'+FM+';font-size:9px;color:'+c.text3+'">Goal: '+goal+' kg</span></div>';
+      h+='</div>';
+    }
+
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">';
+    [{label:'Change',value:(w.change>0?'+':'')+w.change+' kg',color:w.change>0?c.red:w.change<0?c.green:c.text3},
+     {label:'Average',value:w.avg+' kg',color:c.text2},
+     {label:'Range',value:w.min+'–'+w.max,color:c.text2}].forEach(s=>{
+      h+='<div style="padding:12px;border-radius:10px;background:'+c.surface+';border:1px solid '+c.border+';text-align:center">';
+      h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';letter-spacing:1px;margin-bottom:4px">'+s.label.toUpperCase()+'</div>';
+      h+='<div style="font-size:14px;font-weight:600;color:'+s.color+'">'+s.value+'</div></div>';
+    });
+    h+='</div>';
+  }
+
+  // Period selector
+  h+='<div style="display:flex;gap:4px;margin-bottom:16px;background:'+c.surface2+';border-radius:8px;padding:3px;border:1px solid '+c.border+';max-width:400px">';
+  [{k:'week',l:'7 Days'},{k:'month',l:'30 Days'},{k:'quarter',l:'90 Days'},{k:'year',l:'1 Year'}].forEach(p=>{
+    h+='<button onclick="S.weightPeriod=\''+p.k+'\';fetchWeight()" style="flex:1;padding:7px 10px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:'+(S.weightPeriod===p.k?'600':'400')+';font-family:'+FB+';background:'+(S.weightPeriod===p.k?c.surface:'transparent')+';color:'+(S.weightPeriod===p.k?c.accent:c.text2)+'">'+p.l+'</button>';
+  });
+  h+='</div>';
+
+  // Chart
+  if(logs.length>1){
+    const goalW=parseFloat(S.weight_goal)||70;
+    const minW=Math.floor(Math.min(w.min,goalW)-1);
+    const maxW=Math.ceil(Math.max(w.max,goalW)+1);
+    const range=maxW-minW||1;
+    const chartH=200;
+
+    h+='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+';margin-bottom:16px">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+    h+='<div style="font-size:14px;font-weight:600;color:'+c.text+'">Weight Trend</div>';
+    h+='<div style="display:flex;align-items:center;gap:12px">';
+    h+='<span style="display:flex;align-items:center;gap:4px;font-family:'+FM+';font-size:9px;color:'+c.accent+'"><span style="display:inline-block;width:14px;height:2px;background:'+c.accent+'"></span>Weight</span>';
+    h+='<span style="display:flex;align-items:center;gap:4px;font-family:'+FM+';font-size:9px;color:'+c.green+'"><span style="display:inline-block;width:14px;height:2px;background:'+c.green+';border-top:1px dashed '+c.green+'"></span>Goal</span>';
+    h+='</div></div>';
+
+    // SVG chart
+    const chartW=600;
+    const padL=45,padR=10,padT=10,padB=30;
+    const plotW=chartW-padL-padR;
+    const plotH=chartH-padT-padB;
+
+    h+='<svg viewBox="0 0 '+chartW+' '+chartH+'" style="width:100%;height:auto">';
+
+    // Grid lines
+    const gridLines=5;
+    for(let i=0;i<=gridLines;i++){
+      const y=padT+(plotH/gridLines)*i;
+      const val=(maxW-(range/gridLines)*i).toFixed(1);
+      h+='<line x1="'+padL+'" y1="'+y+'" x2="'+(chartW-padR)+'" y2="'+y+'" stroke="'+(S.dark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)')+'" stroke-width="0.5"/>';
+      h+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" fill="'+c.text3+'" font-family="'+FM+'" font-size="9">'+val+'</text>';
+    }
+
+    // Goal line
+    const goalY=padT+plotH-((goalW-minW)/range)*plotH;
+    h+='<line x1="'+padL+'" y1="'+goalY+'" x2="'+(chartW-padR)+'" y2="'+goalY+'" stroke="'+c.green+'" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7"/>';
+    h+='<text x="'+(chartW-padR-2)+'" y="'+(goalY-5)+'" text-anchor="end" fill="'+c.green+'" font-family="'+FM+'" font-size="9">Goal '+goalW+'</text>';
+
+    // Data points and line
+    const points=logs.map((l,i)=>{
+      const x=padL+(plotW/(logs.length-1||1))*i;
+      const y=padT+plotH-((l.weight-minW)/range)*plotH;
+      return{x,y,w:l.weight,d:l.date};
+    });
+
+    // Line
+    let pathD='M'+points.map(p=>p.x+','+p.y).join(' L');
+    h+='<path d="'+pathD+'" fill="none" stroke="'+c.accent+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+
+    // Area fill
+    h+='<path d="'+pathD+' L'+points[points.length-1].x+','+(padT+plotH)+' L'+points[0].x+','+(padT+plotH)+' Z" fill="'+c.accent+'" opacity="0.06"/>';
+
+    // Dots
+    points.forEach(p=>{
+      h+='<circle cx="'+p.x+'" cy="'+p.y+'" r="3" fill="'+c.accent+'" stroke="'+c.surface+'" stroke-width="1.5"/>';
+    });
+
+    // X axis labels (show ~6 dates)
+    const step=Math.max(1,Math.floor(logs.length/6));
+    logs.forEach((l,i)=>{
+      if(i%step!==0&&i!==logs.length-1)return;
+      const x=padL+(plotW/(logs.length-1||1))*i;
+      const d=new Date(l.date+'T12:00:00');
+      const label=d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+      h+='<text x="'+x+'" y="'+(chartH-4)+'" text-anchor="middle" fill="'+c.text3+'" font-family="'+FM+'" font-size="8">'+label+'</text>';
+    });
+
+    h+='</svg></div>';
+  } else if(logs.length===1){
+    h+='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+';text-align:center;color:'+c.text3+'">Log at least 2 days to see the trend chart.</div>';
+  } else {
+    h+='<div style="padding:20px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+';text-align:center;color:'+c.text3+'">No weight data yet. Log your first entry above!</div>';
+  }
+
+  // Recent entries table
+  if(logs.length>0){
+    h+='<div style="padding:16px;border-radius:12px;background:'+c.surface+';border:1px solid '+c.border+'">';
+    h+='<div style="font-size:14px;font-weight:600;color:'+c.text+';margin-bottom:12px">Recent Entries</div>';
+    const recent=logs.slice(-10).reverse();
+    recent.forEach((l,i)=>{
+      const d=new Date(l.date+'T12:00:00');
+      const dayLabel=l.date===today?'Today':d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+      const prev=logs[logs.indexOf(l)-1];
+      let diff='';
+      if(prev){const delta=+(l.weight-prev.weight).toFixed(1);diff=delta>0?'<span style="color:'+c.red+'">↑'+delta+'</span>':delta<0?'<span style="color:'+c.green+'">↓'+Math.abs(delta)+'</span>':'<span style="color:'+c.text3+'">—</span>';}
+      h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;'+(i<recent.length-1?'border-bottom:1px solid '+c.border:'')+'">';
+      h+='<span style="font-size:13px;color:'+c.text2+'">'+dayLabel+'</span>';
+      h+='<span style="font-family:'+FM+';font-size:14px;font-weight:600;color:'+c.text+'">'+l.weight+' kg</span>';
+      h+='<span style="font-family:'+FM+';font-size:11px">'+diff+'</span>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  return h;
+}
+
+function logWeightFromInput(){
+  const el=document.getElementById('weight-input');
+  const dateEl=document.getElementById('weight-date');
+  if(!el||!el.value)return;
+  logWeight(el.value,dateEl?dateEl.value:new Date().toLocaleDateString('en-CA'));
+}
+
+function renderCalendar(){
+  const c=C(),now=new Date();
+  const fd=new Date(S.vy,S.vm,1).getDay();
+  const dim=new Date(S.vy,S.vm+1,0).getDate();
+  const isCurrentMonth=now.getFullYear()===S.vy&&now.getMonth()===S.vm;
+  const today=isCurrentMonth?now.getDate():-1;
+
+  if(S.selDay===null&&isCurrentMonth) S.selDay=today;
+
+  const byDay={};
+  S.events.forEach(e=>{const md=new Date(e.start);
+    if(md.getFullYear()===S.vy&&md.getMonth()===S.vm)(byDay[md.getDate()]=byDay[md.getDate()]||[]).push(e)});
+
+  const totalMeetings=S.events.filter(e=>{const md=new Date(e.start);return md.getFullYear()===S.vy&&md.getMonth()===S.vm}).length;
+
+  let h='';
+
+  // ══════════════════════════════════════
+  // TODAY'S / SELECTED DAY'S AGENDA (TOP)
+  // ══════════════════════════════════════
+  const viewDay=S.selDay||today;
+  if(viewDay>0){
+    const dm=(byDay[viewDay]||[]).sort((a,b)=>a.start.localeCompare(b.start));
+    const selDate=new Date(S.vy,S.vm,viewDay);
+    const dayName=selDate.toLocaleDateString('en-IN',{weekday:'long'});
+    const isViewToday=viewDay===today;
+
+    h+=`<div style="padding:22px;border-radius:14px;background:${c.surface};border:1px solid ${c.border};margin-bottom:24px">`;
+
+    // Agenda header
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${dm.length?'16':'0'}px">`;
+    h+=`<div style="display:flex;align-items:center;gap:10px">`;
+    if(isViewToday) h+=`<div style="width:8px;height:8px;border-radius:50%;background:${c.accent}"></div>`;
+    h+=`<div>
+      <div style="font-size:20px;font-weight:700;color:${c.text}">${dayName}${isViewToday?'':''}</div>
+      <div style="font-family:${FM};font-size:12px;color:${c.text2};margin-top:2px">${selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>`;
+    h+=`</div>`;
+    h+=`<div style="text-align:right">`;
+    if(isViewToday) h+=`<div style="font-family:${FM};font-size:10px;color:${c.accent};font-weight:600;padding:3px 10px;border-radius:5px;background:${c.accentBg};margin-bottom:4px">TODAY</div>`;
+    h+=`<div style="font-family:${FM};font-size:12px;color:${c.text3}">${dm.length} meeting${dm.length!==1?'s':''}</div>`;
+    h+=`</div></div>`;
+
+    if(!dm.length){
+      h+=`<div style="text-align:center;padding:20px 0">
+        <div style="font-size:14px;color:${c.text3}">No meetings scheduled</div>
+      </div>`;
+    }
+
+    dm.forEach(m=>{
+      const startTime=new Date(m.start);
+      const t=startTime.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+      const pl=m.platform==='teams'?'MS Teams':m.platform==='meet'?'Google Meet':m.platform==='zoom'?'Zoom':m.platform;
+      const isTms=m.platform==='teams';
+      const dotColor=isTms?c.outlook:c.gmail;
+
+      // Check if meeting is happening now
+      const endTime=m.end?new Date(m.end):new Date(startTime.getTime()+3600000);
+      const isNow=isViewToday&&now>=startTime&&now<=endTime;
+      const isNext=isViewToday&&!isNow&&startTime>now;
+
+      h+=`<div style="display:flex;gap:14px;padding:16px;border-radius:10px;margin-bottom:6px;background:${isNow?c.accentBg:c.surface2};border:1px solid ${isNow?c.accentBorder:c.border};transition:background 0.15s;position:relative"`;
+      h+=` onmouseenter="this.style.background='${S.dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.04)'}'" onmouseleave="this.style.background='${isNow?c.accentBg:c.surface2}'"`;
+      h+=`>`;
+
+      // Live/next badge
+      if(isNow) h+=`<div style="position:absolute;top:8px;right:12px;font-family:${FM};font-size:8px;color:${c.green};font-weight:600;padding:2px 8px;border-radius:4px;background:rgba(46,125,66,0.1);letter-spacing:1px">● LIVE</div>`;
+
+      // Time column
+      h+=`<div style="min-width:60px;text-align:right;padding-top:2px">
+        <div style="font-family:${FM};font-size:14px;font-weight:600;color:${c.text}">${t.split(' ')[0]}</div>
+        <div style="font-family:${FM};font-size:10px;color:${c.text3}">${t.split(' ')[1]||''}</div>
+      </div>`;
+
+      // Color bar
+      h+=`<div style="width:3px;border-radius:2px;background:${dotColor};flex-shrink:0"></div>`;
+
+      // Content
+      h+=`<div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:600;color:${c.text};margin-bottom:4px">${esc(m.title)}</div>
+        <div style="font-family:${FM};font-size:11px;color:${c.text2}">${pl}</div>
+      </div>`;
+
+      // Join button
+      if(m.link) h+=`<a href="${esc(m.link)}" target="_blank" style="align-self:center;padding:10px 20px;border-radius:8px;font-family:${FM};font-size:12px;font-weight:600;color:#fff;background:${dotColor};text-decoration:none;white-space:nowrap;transition:opacity 0.15s" onmouseenter="this.style.opacity='0.85'" onmouseleave="this.style.opacity='1'">Join ↗</a>`;
+
+      h+=`</div>`;
+    });
+    h+='</div>';
+  }
+
+  // ══════════════════════════════════════
+  // CALENDAR GRID (BOTTOM)
+  // ══════════════════════════════════════
+
+  // Navigation header
+  h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:22px;font-weight:700;color:${c.text}">${MONTHS[S.vm]}</span>
+      <span style="font-size:22px;font-weight:300;color:${c.text2}">${S.vy}</span>
+      <span style="font-family:${FM};font-size:11px;color:${c.text3};margin-left:4px">${totalMeetings} meeting${totalMeetings!==1?'s':''}</span>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="font-family:${FM};font-size:11px;padding:5px 12px;border-radius:6px;background:${c.outlookBg};color:${c.outlook};font-weight:500">Outlook</span>
+      <span style="font-family:${FM};font-size:11px;padding:5px 12px;border-radius:6px;background:${c.gmailBg};color:${c.gmail};font-weight:500">Gmail</span>
+      <div style="width:8px"></div>
+      <button onclick="calPrev()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text};cursor:pointer;font-size:16px;transition:background 0.15s" onmouseenter="this.style.background='${c.surface2}'" onmouseleave="this.style.background='${c.surface}'">&lsaquo;</button>
+      <button onclick="calToday()" style="padding:7px 14px;border-radius:7px;border:1px solid ${isCurrentMonth?c.accentBorder:c.border};background:${isCurrentMonth?c.accentBg:c.surface};color:${isCurrentMonth?c.accent:c.text};cursor:pointer;font-family:${FM};font-size:11px;font-weight:600;transition:background 0.15s">Today</button>
+      <button onclick="calNext()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text};cursor:pointer;font-size:16px;transition:background 0.15s" onmouseenter="this.style.background='${c.surface2}'" onmouseleave="this.style.background='${c.surface}'">&rsaquo;</button>
+    </div>
+  </div>`;
+
+  // Day headers
+  h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">';
+  DAYS.forEach(d=>{h+=`<div style="text-align:center;font-family:${FM};font-size:11px;color:${c.text3};padding:6px 4px;font-weight:500">${d}</div>`});
+  h+='</div>';
+
+  // Grid
+  h+='<div class="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  for(let i=0;i<fd;i++) h+=`<div style="min-height:70px"></div>`;
+
+  for(let day=1;day<=dim;day++){
+    const dm=byDay[day]||[];
+    const isT=day===today;
+    const isS=day===S.selDay;
+    const hasMeetings=dm.length>0;
+
+    let bg=c.surface, bdr=c.border, dayColor=c.text;
+    if(isS){ bg=c.accentBg; bdr=c.accentBorder; dayColor=c.accent; }
+    else if(isT){ bg=S.dark?'rgba(139,105,20,0.06)':'rgba(139,105,20,0.04)'; bdr='rgba(139,105,20,0.15)'; dayColor=c.accent; }
+
+    h+=`<div onclick="selectDay(${day})" style="padding:8px 6px;border-radius:10px;min-height:70px;cursor:pointer;background:${bg};border:1px solid ${bdr};transition:all 0.12s"`;
+    h+=` onmouseenter="this.style.borderColor='${c.accentBorder}'" onmouseleave="this.style.borderColor='${isS?c.accentBorder:isT?'rgba(139,105,20,0.15)':c.border}'"`;
+    h+=`>`;
+
+    h+=`<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">`;
+    if(isT) h+=`<div style="width:5px;height:5px;border-radius:50%;background:${c.accent}"></div>`;
+    h+=`<span style="font-family:${FM};font-size:13px;font-weight:${isT||isS?'700':'500'};color:${dayColor}">${day}</span>`;
+    if(hasMeetings) h+=`<span style="font-family:${FM};font-size:9px;color:${c.text3};margin-left:auto">${dm.length}</span>`;
+    h+=`</div>`;
+
+    dm.slice(0,2).forEach(m=>{
+      const t=new Date(m.start).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+      const isTms=m.platform==='teams';
+      h+=`<div class="meet-chip" style="font-family:${FM};font-size:9px;padding:2px 5px;border-radius:4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;background:${isTms?c.outlookBg:c.gmailBg};color:${isTms?c.outlook:c.gmail}">${t} ${esc(m.title)}</div>`;
+    });
+    if(dm.length>2) h+=`<div style="font-family:${FM};font-size:8px;color:${c.text3};margin-top:2px;text-align:center">+${dm.length-2} more</div>`;
+    h+='</div>';
+  }
+  h+='</div>';
+
+  return h;
+}
+
+function renderKanban(){
+  const c=C();
+  const cols=[{key:'todo',label:'To Do',color:c.accent,icon:'○',next:'inprogress'},
+    {key:'inprogress',label:'In Progress',color:c.amber,icon:'◐',next:'completed',prev:'todo'},
+    {key:'completed',label:'Done',color:c.green,icon:'●',prev:'inprogress'}];
+
+  let h=`<div style="display:flex;gap:8px;margin-bottom:20px;padding:4px;border-radius:10px;background:${c.surface};border:1px solid ${c.border};flex-wrap:wrap">
+    <input id="task-input" placeholder="Type a task… or send voice via Telegram" style="flex:1;min-width:200px;padding:12px 16px;border-radius:7px;background:transparent;border:none;outline:none;font-size:14px;color:${c.text}" onkeydown="if(event.key==='Enter')addNewTask()">
+    <div style="display:flex;gap:4px;align-items:center">
+      <input type="date" id="task-date" value="${new Date().toLocaleDateString('en-CA')}" style="padding:8px 10px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:11px;outline:none;width:130px">
+      <button onclick="addNewTask()" style="padding:10px 20px;border-radius:7px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:13px;font-weight:600">+ Add</button>
+    </div>
+  </div><div class="kanban-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">`;
+
+  cols.forEach(col=>{
+    const items=S.tasks.filter(t=>t.status===col.key);
+    h+=`<div ondragover="event.preventDefault()" ondrop="dropTask('${col.key}')" style="background:${c.surface};border-radius:12px;border:1px solid ${c.border};padding:14px;min-height:280px">`;
+    h+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid ${c.border}">
+      <span style="font-size:12px;color:${col.color}">${col.icon}</span>
+      <span style="font-family:${FM};font-size:10px;font-weight:600;color:${col.color};letter-spacing:1.5px;text-transform:uppercase">${col.label}</span>
+      <span style="margin-left:auto;font-family:${FM};font-size:10px;color:${c.text3};background:${c.surface2};padding:2px 8px;border-radius:6px">${items.length}</span>
+    </div>`;
+    items.forEach(t=>{
+      h+=`<div draggable="true" ondragstart="S.dragId=${t.id}" ondragend="S.dragId=null" style="padding:12px 14px;border-radius:8px;margin-bottom:6px;background:${c.surface2};border:1px solid ${c.border};cursor:grab">
+        <div style="font-size:13px;line-height:1.5;margin-bottom:8px;color:${col.key==='completed'?c.text3:c.text};${col.key==='completed'?'text-decoration:line-through':''}">${esc(t.text)}${t.is_default?`<span style="font-family:${FM};font-size:8px;color:${c.text3};margin-left:6px;vertical-align:super">DAILY</span>`:''}</div>
+        <div style="display:flex;gap:4px">
+          ${col.prev?`<button onclick="updateTask(${t.id},{status:'${col.prev}'})" style="font-family:${FM};font-size:9px;padding:3px 10px;border-radius:5px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer">← Back</button>`:''}
+          ${col.next?`<button onclick="updateTask(${t.id},{status:'${col.next}'})" style="font-family:${FM};font-size:9px;padding:3px 10px;border-radius:5px;border:none;background:${c.accentBg};color:${col.color};cursor:pointer">${col.key==='todo'?'Start →':'Done →'}</button>`:''}
+          ${col.key!=='completed'?`<button onclick="event.stopPropagation();pomoFromTask(${t.id})" style="font-family:${FM};font-size:9px;padding:3px 8px;border-radius:5px;border:none;background:rgba(192,57,43,0.06);color:${c.red};cursor:pointer" title="Start Pomodoro">🍅</button>`:''}
+          <button onclick="event.stopPropagation();rescheduleTask(${t.id})" style="font-family:${FM};font-size:9px;padding:3px 8px;border-radius:5px;border:none;background:${c.accentBg};color:${c.accent};cursor:pointer" title="Move to another date">📅</button>
+          <button onclick="deleteTask(${t.id})" style="font-family:${FM};font-size:9px;padding:3px 8px;border-radius:5px;border:none;background:rgba(192,57,43,0.06);color:${c.red};cursor:pointer;margin-left:auto;opacity:0.5">×</button>
+        </div></div>`;
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function renderSettings(){
+  const c=C();
+  const sec=t=>`<div style="font-family:${FM};font-size:10px;letter-spacing:2px;color:${c.accent};text-transform:uppercase;margin-bottom:10px;margin-top:24px;font-weight:500">${t}</div>`;
+  const card=x=>`<div style="padding:20px;border-radius:12px;background:${c.surface};border:1px solid ${c.border}">${x}</div>`;
+
+  let h='<div class="settings-wrap" style="max-width:600px">';
+  h+=sec('Life Dates');
+  h+=card([['Date of Birth',S.birth,'updateBirth'],['Date of Death',S.death,'updateDeath']].map(([l,v,fn])=>
+    `<div style="display:flex;align-items:center;gap:14px;margin-bottom:10px"><span style="font-size:13px;color:${c.text2};width:120px">${l}</span>
+    <input type="date" value="${v}" onchange="${fn}(this.value)" style="padding:8px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:12px;outline:none"></div>`).join(''));
+
+  h+=sec('Default Daily Tasks');
+  let dc='';
+  S.defaults.forEach((t,i)=>{dc+=`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:7px;margin-bottom:5px;background:${c.surface2}">
+    <span style="font-family:${FM};font-size:10px;color:${c.text3};width:20px;text-align:center">${i+1}</span>
+    <span style="flex:1;font-size:13px;color:${c.text}">${esc(t.text)}</span>
+    <button onclick="deleteDefault(${t.id})" style="font-family:${FM};font-size:9px;padding:3px 10px;border-radius:5px;border:none;cursor:pointer;background:rgba(192,57,43,0.06);color:${c.red};opacity:0.5">×</button></div>`});
+  dc+=`<div style="display:flex;gap:8px;margin-top:12px">
+    <input id="default-input" placeholder="Add a default task…" style="flex:1;padding:10px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:13px;outline:none" onkeydown="if(event.key==='Enter')addNewDefault()">
+    <button onclick="addNewDefault()" style="padding:10px 18px;border-radius:7px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:12px;font-weight:600">+ Add</button></div>`;
+  h+=card(dc);
+
+  h+=sec('Weight Goal');
+  h+=card(`<div style="display:flex;align-items:center;gap:14px">
+    <span style="font-size:13px;color:${c.text2};width:130px">Target weight</span>
+    <input type="number" step="0.5" value="${S.weight_goal||70}" onchange="saveSetting('weight_goal',this.value);S.weight_goal=this.value" style="width:100px;padding:8px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:14px;outline:none">
+    <span style="font-size:13px;color:${c.text3}">kg</span>
+  </div>`);
+
+  h+=sec('Pomodoro Timer');
+  h+=card(`<div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+    <span style="font-size:13px;color:${c.text2};width:130px">Work duration</span>
+    <select onchange="saveSetting('pomodoro_work',this.value);S.pomo.duration=parseInt(this.value)" style="padding:8px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:12px;outline:none">
+      ${[15,20,25,30,45,50,60].map(v=>`<option value="${v}" ${v===parseInt(S.pomo.duration)?'selected':''}>${v} min</option>`).join('')}
+    </select>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+    <span style="font-size:13px;color:${c.text2};width:130px">Short break</span>
+    <span style="font-family:${FM};font-size:12px;color:${c.text3}">5 min (after each pomodoro)</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px">
+    <span style="font-size:13px;color:${c.text2};width:130px">Long break</span>
+    <span style="font-family:${FM};font-size:12px;color:${c.text3}">15 min (after every 4 pomodoros)</span>
+  </div>`);
+
+  h+=sec('Manage Habits');
+  let hc='';
+  S.habits.forEach((hab,i)=>{
+    hc+=`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:7px;margin-bottom:5px;background:${c.surface2}">
+      <span style="font-family:${FM};font-size:10px;color:${c.text3};width:20px;text-align:center">${i+1}</span>
+      <span style="flex:1;font-size:13px;color:${c.text}">${esc(hab.name)}</span>
+      <button onclick="deleteHabit(${hab.id})" style="font-family:${FM};font-size:9px;padding:3px 10px;border-radius:5px;border:none;cursor:pointer;background:rgba(192,57,43,0.06);color:${c.red};opacity:0.5">×</button></div>`;
+  });
+  hc+=`<div style="display:flex;gap:8px;margin-top:12px">
+    <input id="settings-habit-input" placeholder="Add a new habit…" style="flex:1;padding:10px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){addHabit(this.value);this.value=''}">
+    <button onclick="const el=document.getElementById('settings-habit-input');if(el&&el.value.trim()){addHabit(el.value.trim());el.value=''}" style="padding:10px 18px;border-radius:7px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:12px;font-weight:600">+ Add</button></div>`;
+  h+=card(hc);
+
+  h+=sec('Manage Vitamins');
+  let vc='<div style="font-size:12px;color:'+c.text2+';margin-bottom:14px">Telegram reminders are sent 5 min before each slot</div>';
+
+  // Time settings for each slot
+  vc+=`<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+    ${[['morning','🌅 Morning','vitamin_morning'],['noon','☀️ Noon','vitamin_noon'],['night','🌙 Night','vitamin_night']].map(([slot,label,key])=>`<div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;color:${c.text2}">${label}</span>
+      <input type="time" value="${S[key]||''}" onchange="saveSetting('${key}',this.value);S['${key}']=this.value" style="padding:6px 10px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-family:${FM};font-size:12px;outline:none">
+    </div>`).join('')}
+  </div>`;
+
+  // List ALL vitamins (not just today's)
+  const schedDescs={daily:'Daily',weekly:'Weekly',interval:'Every N days'};
+  const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  S.allVitamins.forEach((v,i)=>{
+    let desc=schedDescs[v.schedule_type]||v.schedule_type;
+    if(v.schedule_type==='weekly') desc='Weekly ('+dayNames[v.schedule_value]+')';
+    if(v.schedule_type==='interval') desc='Every '+v.schedule_value+' days';
+    vc+=`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:7px;margin-bottom:5px;background:${c.surface2}">
+      <span style="flex:1;font-size:13px;color:${c.text}">${esc(v.name)}</span>
+      <span style="font-family:${FM};font-size:10px;color:${c.text3}">${desc} · ${v.time_slots}</span>
+      <button onclick="deleteVitamin(${v.id})" style="font-family:${FM};font-size:9px;padding:3px 10px;border-radius:5px;border:none;cursor:pointer;background:rgba(192,57,43,0.06);color:${c.red};opacity:0.5">×</button></div>`;
+  });
+
+  // Add new vitamin form
+  vc+=`<div style="margin-top:14px;padding:16px;border-radius:8px;background:${c.surface2}">
+    <div style="font-size:12px;font-weight:600;color:${c.text};margin-bottom:10px">Add vitamin / supplement</div>
+    <input id="vit-name" placeholder="Name (e.g. Omega 3)" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-size:13px;outline:none;margin-bottom:8px">
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <select id="vit-type" onchange="var ex=document.getElementById('vit-extra-weekly');var ex2=document.getElementById('vit-extra-interval');ex.style.display=this.value==='weekly'?'block':'none';ex2.style.display=this.value==='interval'?'block':'none'" style="padding:8px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-family:${FM};font-size:12px;outline:none">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="interval">Every N days</option>
+      </select>
+      <div id="vit-extra-weekly" style="display:none">
+        <select id="vit-day" style="padding:8px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-family:${FM};font-size:12px;outline:none">
+          <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+          <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+      </div>
+      <div id="vit-extra-interval" style="display:none">
+        <input id="vit-interval" type="number" min="2" value="2" placeholder="Every N days" style="width:120px;padding:8px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-family:${FM};font-size:12px;outline:none">
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+      <label style="font-size:12px;color:${c.text2};display:flex;align-items:center;gap:4px"><input type="checkbox" id="vit-morning" checked> Morning</label>
+      <label style="font-size:12px;color:${c.text2};display:flex;align-items:center;gap:4px"><input type="checkbox" id="vit-noon"> Noon</label>
+      <label style="font-size:12px;color:${c.text2};display:flex;align-items:center;gap:4px"><input type="checkbox" id="vit-night"> Night</label>
+    </div>
+    <input id="vit-notes" placeholder="Notes (optional, e.g. with food)" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-size:12px;outline:none;margin-bottom:10px">
+    <button onclick="addNewVitamin()" style="padding:10px 18px;border-radius:7px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:12px;font-weight:600">+ Add Vitamin</button>
+  </div>`;
+  h+=card(vc);
+
+  h+=sec('Integrations');
+  const intg=[{n:'Google Calendar',d:'Personal Gmail — primary sync',s:'connected',cl:c.green},
+   {n:'Outlook (ICS)',d:'Office — ICS subscription',s:'synced',cl:c.outlook},
+   {n:'Gmail Office (ICS)',d:'Office Gmail — ICS subscription',s:'synced',cl:c.outlook},
+   {n:'Telegram Bot',d:'Voice input & reminders',s:'connected',cl:c.green}];
+  h+=card(intg.map((x,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;${i<intg.length-1?'border-bottom:1px solid '+c.border:''}">
+    <div><div style="font-size:14px;font-weight:500;color:${c.text}">${x.n}</div><div style="font-family:${FM};font-size:10px;color:${c.text3};margin-top:2px">${x.d}</div></div>
+    <span style="font-family:${FM};font-size:9px;padding:4px 12px;border-radius:6px;font-weight:500;background:rgba(46,125,66,0.08);color:${x.cl}">${x.s}</span></div>`).join(''));
+
+  h+=sec('Voice & Text Commands');
+  const cmds=[
+    ['Say or type anything','Adds as a new task'],
+    ['"complete <task>"','Marks task as done'],
+    ['"done <task>"','Marks task as done'],
+    ['"move <task> to done"','Marks task as done'],
+    ['"<task> is done"','Marks task as done'],
+    ['"start <task>"','Moves to in-progress'],
+    ['"move <task> to in progress"','Moves to in-progress'],
+    ['"delete <task>"','Removes the task'],
+    ['"move back <task>"','Back to to-do'],
+    ['"postpone <task> to tomorrow"','Move to future date'],
+    ['"postpone <task> to next Monday"','Move to future date'],
+    ['"add <task> for tomorrow"','Schedule ahead'],
+    ['"add <task> for 15 April"','Schedule for specific date'],
+    ['/tasks','Show today\'s task list'],
+    ['/meetings','Show upcoming meetings'],
+    ['/add <task>','Add a specific task'],
+    ['/digest','Daily summary (auto at 9pm)'],
+    ['/sadhana','Today\'s sadhana status'],
+    ['"nicotex"','Log +1 nicotex'],
+    ['"booti" or "babaji"','Log +1 Babaji Ka Booti'],
+    ['"nicotex 5"','Set nicotex count to 5'],
+    ['"weight 72.5"','Log today\'s weight'],
+    ['help','Show all commands'],
+  ];
+  h+=card('<div style="font-size:13px;color:'+c.text2+';margin-bottom:14px">Works with both voice messages and typed text in Telegram</div>'+
+    cmds.map((cmd,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:8px 0;${i<cmds.length-1?'border-bottom:1px solid '+c.border:''}">
+    <div style="flex:1;font-family:${FM};font-size:12px;color:${c.text};font-weight:500">${cmd[0]}</div>
+    <div style="font-size:12px;color:${c.text3}">${cmd[1]}</div></div>`).join(''));
+
+  h+=sec('Security');
+  const secs=[['Local hosting','All data stays on your MacBook'],['OAuth tokens','No passwords stored'],['Chat ID lock','Telegram responds only to you'],['ICS sync','No office API access needed']];
+  h+=card(secs.map((s,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;${i<secs.length-1?'border-bottom:1px solid '+c.border:''}">
+    <span style="color:${c.green};font-weight:700">✓</span>
+    <div><div style="font-size:13px;color:${c.text}">${s[0]}</div><div style="font-family:${FM};font-size:10px;color:${c.text3};margin-top:1px">${s[1]}</div></div></div>`).join(''));
+
+  h+='</div>';
+  return h;
+}
+
+function toggleTheme(){S.dark=!S.dark;document.body.className=S.dark?'dark':'';renderHeader();renderCountdownFull();renderTabs();renderContent()}
+function switchTab(t){S.tab=t;renderTabs();if(t==='meetings')fetchEvents();else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}else if(t==='habits'){fetchHabitsToday();fetchPomoToday();fetchVitamins();if(S.habitView==='month')fetchHabitMonth()}else if(t==='vitamins'){fetchVitamins()}else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}else if(t==='kaaya'){fetchWeight()}else if(t==='sadhana'){fetchSadhana()}else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins()};renderContent()}
+function setTaskView(v){S.taskView=v;if(v==='month')fetchMonthTasks();else fetchTasks();renderContent()}
+function viewTaskDate(dateStr){S.taskDate=dateStr;S.taskView='today';fetchTasks();renderContent()}
+function taskDatePrev(){const d=new Date(S.taskDate+'T12:00:00');d.setDate(d.getDate()-1);S.taskDate=d.toLocaleDateString('en-CA');fetchTasks()}
+function taskDateNext(){const d=new Date(S.taskDate+'T12:00:00');d.setDate(d.getDate()+1);S.taskDate=d.toLocaleDateString('en-CA');fetchTasks()}
+function taskDateToday(){S.taskDate=new Date().toLocaleDateString('en-CA');fetchTasks()}
+function setHabitView(v){S.habitView=v;if(v==='month')fetchHabitMonth();else fetchHabitsToday();renderContent()}
+function habitMonthPrev(){if(S.hvm===0){S.hvm=11;S.hvy--}else S.hvm--;fetchHabitMonth()}
+function habitMonthNext(){if(S.hvm===11){S.hvm=0;S.hvy++}else S.hvm++;fetchHabitMonth()}
+function habitMonthToday(){const n=new Date();S.hvm=n.getMonth();S.hvy=n.getFullYear();fetchHabitMonth()}
+function addNewHabit(){const el=document.getElementById('habit-input');if(el&&el.value.trim()){addHabit(el.value.trim());el.value=''}}
+function pomoFromTask(id){const task=S.tasks.find(t=>t.id===id);if(task)startPomo(task.text)}
+function setHobbyTab(t){S.hobbyTab=t;if(t==='chess'&&!S.chessPuzzle)fetchChessPuzzle();if(t==='kannada')fetchPhrases();renderContent()}
+
+async function translateKannada(){
+  const el=document.getElementById('kan-input');if(!el||!el.value.trim())return;
+  S.kannadaInput=el.value.trim();S.kannadaLoading=true;renderContent();
+  try{const r=await fetch(API+'/hobbies/kannada/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:S.kannadaInput})});
+  S.kannadaResult=await r.json()}catch(e){S.kannadaResult={kannada:'Translation failed',transliteration:'',original:S.kannadaInput}}
+  S.kannadaLoading=false;renderContent();
+}
+async function saveKannadaPhrase(){
+  if(!S.kannadaResult)return;
+  await fetch(API+'/hobbies/kannada/phrases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({english:S.kannadaResult.original,kannada:S.kannadaResult.kannada,transliteration:S.kannadaResult.transliteration})});
+  fetchPhrases();alert('Saved to My Phrases!');
+}
+async function fetchPhrases(){try{const r=await fetch(API+'/hobbies/kannada/phrases');S.savedPhrases=await r.json()}catch(e){S.savedPhrases=[]}renderContent()}
+async function deletePhrase(id){await fetch(API+'/hobbies/kannada/phrases/'+id,{method:'DELETE'});fetchPhrases()}
+function speakKannada(){if(S.kannadaResult)speakText(S.kannadaResult.kannada)}
+function speakPhrase(id){const p=S.savedPhrases.find(x=>x.id===id);if(p)speakText(p.kannada)}
+function speakText(text){const clean=text.replace(/[?!.,;:]+/g,'').trim();if(!clean)return;const a=new Audio(API+'/hobbies/kannada/speak?text='+encodeURIComponent(clean));a.play().catch(e=>console.log('Audio error:',e))}
+
+// ── SADHANA ──
+async function fetchSadhana(){try{const r=await fetch(API+'/sadhana/today?date='+S.sadhanaDate);S.sadhanaItems=await r.json()}catch(e){S.sadhanaItems=[]}renderContent()}
+async function logSadhana(id,count){
+  await fetch(API+'/sadhana/'+id+'/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count,date:S.sadhanaDate})});
+  fetchSadhana();
+}
+function sadhanaDatePrev(){const d=new Date(S.sadhanaDate+'T12:00:00');d.setDate(d.getDate()-1);S.sadhanaDate=d.toLocaleDateString('en-CA');fetchSadhana()}
+function sadhanaDateNext(){const d=new Date(S.sadhanaDate+'T12:00:00');d.setDate(d.getDate()+1);S.sadhanaDate=d.toLocaleDateString('en-CA');fetchSadhana()}
+function sadhanaDateToday(){S.sadhanaDate=new Date().toLocaleDateString('en-CA');fetchSadhana()}
+async function advancePhase(id,phase){
+  await fetch(API+'/sadhana/'+id+'/phase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase})});
+  fetchSadhana();
+}
+
+function renderSadhana(){
+  const c=C();
+  const todayStr=new Date().toLocaleDateString('en-CA');
+  const isToday=S.sadhanaDate===todayStr;
+  const viewDate=new Date(S.sadhanaDate+'T12:00:00');
+  const dateLabel=isToday?'Today':viewDate.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+
+  let h='';
+
+  // Date navigation
+  h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:20px">';
+  h+='<button onclick="sadhanaDatePrev()" style="padding:6px 12px;border-radius:6px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-size:14px">&lsaquo;</button>';
+  h+='<span style="font-family:'+FM+';font-size:13px;font-weight:600;color:'+(isToday?c.accent:c.text)+';min-width:140px;text-align:center">'+dateLabel+'</span>';
+  h+='<button onclick="sadhanaDateNext()" style="padding:6px 12px;border-radius:6px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-size:14px">&rsaquo;</button>';
+  if(!isToday) h+='<button onclick="sadhanaDateToday()" style="padding:6px 14px;border-radius:6px;border:1px solid '+c.accentBorder+';background:'+c.accentBg+';color:'+c.accent+';cursor:pointer;font-family:'+FM+';font-size:11px;font-weight:500">Today</button>';
+  h+='</div>';
+
+  if(S.sadhanaItems.length===0){
+    h+='<div style="text-align:center;padding:40px;color:'+c.text3+'">Loading...</div>';
+    return h;
+  }
+
+  S.sadhanaItems.forEach(item=>{
+    const phase=item.phase;
+    const target=phase.target;
+    const count=item.today_count;
+    const overTarget=count>target&&target>0;
+    const atTarget=count<=target;
+    const isFreedom=target===0&&item.current_phase===item.total_phases-1;
+    const phaseUnit=phase.unit||item.unit;
+
+    h+='<div style="padding:22px;border-radius:14px;background:'+c.surface+';border:1px solid '+c.border+';margin-bottom:20px">';
+
+    // Header
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    h+='<div style="font-size:20px;font-weight:700;color:'+c.text+'">'+esc(item.name)+'</div>';
+    if(item.streak>0) h+='<div style="font-family:'+FM+';font-size:12px;color:'+c.green+';font-weight:600">🔥 '+item.streak+' day streak</div>';
+    h+='</div>';
+
+    // Phase info
+    h+='<div style="font-family:'+FM+';font-size:12px;color:'+c.accent+';margin-bottom:4px">'+phase.label+'</div>';
+    h+='<div style="font-size:13px;color:'+c.text2+';margin-bottom:16px;line-height:1.5">'+phase.desc+'</div>';
+
+    // Phase progress dots
+    h+='<div style="display:flex;gap:6px;margin-bottom:20px;align-items:center">';
+    item.phases.forEach((p,i)=>{
+      const done=i<item.current_phase;
+      const current=i===item.current_phase;
+      const clr=done?c.green:current?c.accent:c.text3;
+      h+='<div style="width:'+(current?'28':'10')+'px;height:10px;border-radius:5px;background:'+clr+';opacity:'+(done||current?'1':'0.3')+';transition:all 0.3s"></div>';
+    });
+    h+='<span style="font-family:'+FM+';font-size:10px;color:'+c.text3+';margin-left:6px">Phase '+(item.current_phase+1)+'/'+item.total_phases+'</span>';
+    h+='</div>';
+
+    if(!isFreedom){
+      // Today's counter
+      h+='<div style="display:flex;align-items:center;gap:20px;margin-bottom:20px">';
+      h+='<div style="text-align:center">';
+      h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:6px">'+(isToday?'TODAY':dateLabel.toUpperCase())+'</div>';
+      h+='<div style="display:flex;align-items:center;gap:12px">';
+      h+='<button onclick="logSadhana('+item.id+',Math.max(0,'+count+'-1))" style="width:36px;height:36px;border-radius:50%;border:1px solid '+c.border+';background:'+c.surface2+';cursor:pointer;font-size:18px;color:'+c.text2+'">−</button>';
+      h+='<div style="font-size:36px;font-weight:300;color:'+(overTarget?c.red:c.green)+';min-width:50px;text-align:center;font-family:'+FM+'">'+count+'</div>';
+      h+='<button onclick="logSadhana('+item.id+','+(count+1)+')" style="width:36px;height:36px;border-radius:50%;border:1px solid '+c.border+';background:'+c.surface2+';cursor:pointer;font-size:18px;color:'+c.text2+'">+</button>';
+      h+='</div></div>';
+
+      // Target indicator
+      h+='<div style="flex:1">';
+      h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:6px">TARGET</div>';
+      h+='<div style="font-size:14px;color:'+c.text2+'">Max <span style="font-weight:700;color:'+(overTarget?c.red:c.green)+'">'+target+'</span> '+phaseUnit+'</div>';
+      if(overTarget) h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.red+';margin-top:4px">⚠ Over target by '+(count-target)+'</div>';
+      else if(count===0&&target>0) h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.green+';margin-top:4px">✨ Clean so far today!</div>';
+      else if(atTarget) h+='<div style="font-family:'+FM+';font-size:11px;color:'+c.green+';margin-top:4px">✓ Within target</div>';
+      h+='</div></div>';
+
+      // 7-day mini chart
+      const last7=item.history.slice(-7);
+      if(last7.length>0){
+        const maxVal=Math.max(...last7.map(d=>d.count),target,1);
+        h+='<div style="margin-bottom:16px">';
+        h+='<div style="font-family:'+FM+';font-size:10px;color:'+c.text3+';letter-spacing:1px;margin-bottom:8px">LAST 7 DAYS</div>';
+        h+='<div style="display:flex;align-items:flex-end;gap:4px;height:60px">';
+        last7.forEach(d=>{
+          const pct=Math.max(5,d.count/maxVal*100);
+          const over=d.count>target;
+          const day=new Date(d.date+'T12:00:00').toLocaleDateString('en-IN',{weekday:'short'}).charAt(0);
+          h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center">';
+          h+='<div style="width:100%;height:'+pct+'%;min-height:4px;border-radius:3px 3px 0 0;background:'+(over?c.red:c.green)+';opacity:0.7"></div>';
+          h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';margin-top:4px">'+day+'</div>';
+          h+='</div>';
+        });
+        // Target line reference
+        h+='</div>';
+        h+='<div style="font-family:'+FM+';font-size:9px;color:'+c.text3+';margin-top:4px">Green = within target · Red = over target</div>';
+        h+='</div>';
+      }
+    } else {
+      // Freedom state
+      h+='<div style="text-align:center;padding:30px 0">';
+      h+='<div style="font-size:48px;margin-bottom:12px">🕊️</div>';
+      h+='<div style="font-size:18px;font-weight:600;color:'+c.green+'">You are free.</div>';
+      h+='<div style="font-size:13px;color:'+c.text2+';margin-top:8px">Mahakaal is proud of your discipline.</div>';
+      h+='</div>';
+    }
+
+    // Phase navigation
+    if(!isFreedom){
+      h+='<div style="display:flex;gap:8px;margin-top:4px">';
+      if(item.current_phase>0) h+='<button onclick="advancePhase('+item.id+','+(item.current_phase-1)+')" style="padding:6px 14px;border-radius:6px;border:1px solid '+c.border+';background:'+c.surface+';color:'+c.text2+';cursor:pointer;font-family:'+FM+';font-size:11px">← Previous Phase</button>';
+      if(item.current_phase<item.total_phases-1) h+='<button onclick="if(confirm(\'Ready to move to the next phase? This means a stricter target.\')){advancePhase('+item.id+','+(item.current_phase+1)+')}" style="padding:6px 14px;border-radius:6px;border:none;background:'+c.accent+';color:#fff;cursor:pointer;font-family:'+FM+';font-size:11px;font-weight:600">Next Phase →</button>';
+      h+='</div>';
+    }
+
+    h+='</div>';
+  });
+
+  // Motivational footer
+  h+='<div style="text-align:center;padding:16px;font-size:13px;color:'+c.text3+';font-style:italic">';
+  h+='"Every day you resist is a day you grow stronger." — Mahakaal 🔱';
+  h+='</div>';
+
+  return h;
+}
+function chessClick(sq,r,cl){
+  if(S.chessSolved)return;
+  if(!S.chessSelected){S.chessSelected=sq;renderContent();return}
+  const move=S.chessSelected+sq;
+  const solution=S.chessPuzzle.solution||[];
+  const moveIdx=S.chessMoves.length;
+  if(move===solution[moveIdx]){
+    S.chessMoves.push(move);S.chessSelected=null;
+    if(S.chessMoves.length>=solution.length){S.chessSolved=true;saveHobbyProgress('chess',0,{puzzleId:S.chessPuzzle.id})}
+    renderContent();
+  } else {S.chessSelected=null;renderContent();alert('Wrong move! Try again.')}
+}
+function chessShowHint(){const s=S.chessPuzzle.solution||[];const m=s[S.chessMoves.length]||'';if(m)alert('Hint: move from '+m.slice(0,2)+' to '+m.slice(2,4))}
+function chessShowSolution(){const s=S.chessPuzzle.solution||[];alert('Solution: '+s.join(' → '))}
+function kannadaPrev(){if(S.kannadaLesson>0){S.kannadaLesson--;renderContent()}}
+function kannadaNext(){if(S.kannadaLesson<KANNADA_LESSONS.length-1){S.kannadaLesson++;renderContent()}}
+function kannadaComplete(){saveHobbyProgress('kannada',S.kannadaLesson);if(S.kannadaLesson<KANNADA_LESSONS.length-1){S.kannadaLesson++;renderContent()}}
+function astroPrev(){if(S.astroLesson>0){S.astroLesson--;renderContent()}}
+function astroNext(){if(S.astroLesson<ASTRO_LESSONS.length-1){S.astroLesson++;renderContent()}}
+function astroComplete(){saveHobbyProgress('astronomy',S.astroLesson);if(S.astroLesson<ASTRO_LESSONS.length-1){S.astroLesson++;renderContent()}}
+async function fetchAstroImage(query,key){
+  if(S.astroImages[key])return;
+  S.astroImages[key]='loading';renderContent();
+  try{const r=await fetch(API+'/hobbies/astro/image?q='+encodeURIComponent(query));
+  const data=await r.json();
+  if(data.length>0){S.astroImages[key]=data[0]}else{S.astroImages[key]={image:'',title:'No image found for this object',description:'Try searching NASA Image Library at commons.wikimedia.org'}}
+  renderContent()}catch(e){S.astroImages[key]=null}
+}
+function addNewVitamin(){
+  const name=document.getElementById('vit-name');
+  const type=document.getElementById('vit-type');
+  const notes=document.getElementById('vit-notes');
+  if(!name||!name.value.trim())return;
+  const schedType=type?type.value:'daily';
+  let schedValue=1;
+  if(schedType==='weekly'){const d=document.getElementById('vit-day');schedValue=d?parseInt(d.value):1;}
+  if(schedType==='interval'){const iv=document.getElementById('vit-interval');schedValue=iv?parseInt(iv.value)||2:2;}
+  const slots=[];
+  if(document.getElementById('vit-morning')&&document.getElementById('vit-morning').checked)slots.push('morning');
+  if(document.getElementById('vit-noon')&&document.getElementById('vit-noon').checked)slots.push('noon');
+  if(document.getElementById('vit-night')&&document.getElementById('vit-night').checked)slots.push('night');
+  if(!slots.length)slots.push('morning');
+  addVitamin(name.value.trim(),schedType,schedValue,slots.join(','),notes?notes.value:'');
+  name.value='';if(notes)notes.value='';
+}
+function taskMonthPrev(){if(S.tvm===0){S.tvm=11;S.tvy--}else S.tvm--;fetchMonthTasks()}
+function taskMonthNext(){if(S.tvm===11){S.tvm=0;S.tvy++}else S.tvm++;fetchMonthTasks()}
+function taskMonthToday(){const n=new Date();S.tvm=n.getMonth();S.tvy=n.getFullYear();fetchMonthTasks()}
+function selectDay(d){S.selDay=d;renderContent()}
+function calPrev(){if(S.vm===0){S.vm=11;S.vy--}else S.vm--;S.selDay=null;S.events=eventCache[S.vy+'-'+S.vm]||[];renderContent();fetchEvents()}
+function calNext(){if(S.vm===11){S.vm=0;S.vy++}else S.vm++;S.selDay=null;S.events=eventCache[S.vy+'-'+S.vm]||[];renderContent();fetchEvents()}
+function calToday(){const n=new Date();const wasCurrentMonth=n.getFullYear()===S.vy&&n.getMonth()===S.vm;S.vm=n.getMonth();S.vy=n.getFullYear();S.selDay=n.getDate();if(wasCurrentMonth){renderContent()}else{renderContent();fetchEvents()}}
+function addNewTask(){
+  const el=document.getElementById('task-input');
+  const dateEl=document.getElementById('task-date');
+  if(el&&el.value.trim()){
+    const date=dateEl?dateEl.value:new Date().toLocaleDateString('en-CA');
+    addTaskWithDate(el.value.trim(),date);
+    el.value='';
+    setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},100);
+  }
+}
+async function addTaskWithDate(text,date){
+  await fetch(API+'/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,date})});
+  fetchTasks();if(S.taskView==='month')fetchMonthTasks();
+}
+function rescheduleTask(id){
+  const task=S.tasks.find(t=>t.id===id);
+  const newDate=prompt('Move "'+(task?task.text:'task')+'" to which date?\n\nFormat: YYYY-MM-DD',getTomorrow());
+  if(newDate&&newDate.match(/^\d{4}-\d{2}-\d{2}$/)){
+    fetch(API+'/tasks/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:newDate})})
+    .then(()=>{fetchTasks();if(S.taskView==='month')fetchMonthTasks()});
+  }
+}
+function getTomorrow(){const d=new Date();d.setDate(d.getDate()+1);return d.toLocaleDateString('en-CA')}
+function dropTask(s){if(S.dragId){updateTask(S.dragId,{status:s});S.dragId=null}}
+function addNewDefault(){const el=document.getElementById('default-input');if(el&&el.value.trim()){addDefault(el.value.trim());el.value=''}}
+function updateBirth(v){S.birth=v;saveSetting('birth_date',v);renderCountdownFull()}
+function updateDeath(v){S.death=v;saveSetting('death_date',v);renderCountdownFull()}
+
+function tickPomo(){
+  if(!S.pomo.active) return;
+  S.pomo.timeLeft--;
+  if(S.pomo.timeLeft<=0){
+    if(S.pomo.onBreak){
+      // Break finished
+      S.pomo.active=false;S.pomo.onBreak=false;
+      renderContent();
+    } else {
+      // Work session finished
+      completePomo();
+    }
+    return;
+  }
+  // Update timer display without full re-render
+  const mins=Math.floor(S.pomo.timeLeft/60);
+  const secs=S.pomo.timeLeft%60;
+  const el=document.getElementById('pomo-time');
+  if(el) el.textContent=pad(mins)+':'+pad(secs);
+  const bar=document.getElementById('pomo-bar');
+  if(bar){
+    const totalSecs=S.pomo.onBreak?(S.pomo.count%4===0?15:5)*60:S.pomo.duration*60;
+    bar.style.width=(S.pomo.timeLeft/totalSecs*100)+'%';
+  }
+}
+
+renderHeader();renderCountdownFull();renderTabs();renderContent();
+fetchSettings();fetchEvents();
+fetch(API+'/seed-defaults',{method:'POST'}).then(()=>fetchTasks());
+fetchDefaults();fetchPomoToday();fetchHabitsToday();fetchVitamins();fetchAllVitamins();
+// Load pomodoro duration from settings
+fetch(API+'/settings').then(r=>r.json()).then(s=>{
+  if(s.pomodoro_work) S.pomo.duration=parseInt(s.pomodoro_work)||25;
+}).catch(()=>{});
+setInterval(()=>{tickCD();tickPomo()},1000);
+</script>
+</body>
+</html>
