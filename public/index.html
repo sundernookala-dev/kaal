@@ -120,6 +120,7 @@ async function deleteDefault(id){await fetch(API+'/default-tasks/'+id,{method:'D
 async function fetchHabitsToday(){try{const r=await fetch(API+'/habits/today');S.habits=await r.json()}catch(e){S.habits=[]}renderContent()}
 async function fetchHabitMonth(){try{const r=await fetch(API+'/habits/month?year='+S.hvy+'&month='+(S.hvm+1));S.habitMonth=await r.json()}catch(e){S.habitMonth={}}renderContent()}
 async function toggleHabit(id){await fetch(API+'/habits/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});fetchHabitsToday();if(S.habitView==='month')fetchHabitMonth()}
+async function toggleHabitDate(id,date){await fetch(API+'/habits/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});await fetchHabitMonth();renderDayModal(date)}
 async function addHabit(name){await fetch(API+'/habits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});fetchHabitsToday();fetchHabitMonth()}
 async function deleteHabit(id){await fetch(API+'/habits/'+id,{method:'DELETE'});fetchHabitsToday();fetchHabitMonth()}
 
@@ -559,8 +560,10 @@ function renderHabitsMonth(){
       const dayData=byDate[dateStr]||{};
       const done=dayData[hab.id]||0;
       const isT=day===today;
+      const isFuture=S.hvy>now.getFullYear()||(S.hvy===now.getFullYear()&&S.hvm>now.getMonth())||(S.hvy===now.getFullYear()&&S.hvm===now.getMonth()&&day>now.getDate());
       const bg=done?c.green:(isT?'rgba(139,105,20,0.08)':c.surface2);
-      h+=`<div style="aspect-ratio:1;border-radius:4px;background:${bg};display:flex;align-items:center;justify-content:center;font-family:${FM};font-size:10px;color:${done?'#fff':c.text3};font-weight:${isT?'700':'400'}">${day}</div>`;
+      const clickable=!isFuture;
+      h+=`<div ${clickable?`onclick="openDayModal('${dateStr}')"`:''} style="aspect-ratio:1;border-radius:4px;background:${bg};display:flex;align-items:center;justify-content:center;font-family:${FM};font-size:10px;color:${done?'#fff':c.text3};font-weight:${isT?'700':'400'};${clickable?'cursor:pointer':'opacity:0.4'}">${day}</div>`;
     }
     h+=`</div></div>`;
   });
@@ -1588,6 +1591,40 @@ function habitMonthPrev(){if(S.hvm===0){S.hvm=11;S.hvy--}else S.hvm--;fetchHabit
 function habitMonthNext(){if(S.hvm===11){S.hvm=0;S.hvy++}else S.hvm++;fetchHabitMonth()}
 function habitMonthToday(){const n=new Date();S.hvm=n.getMonth();S.hvy=n.getFullYear();fetchHabitMonth()}
 function addNewHabit(){const el=document.getElementById('habit-input');if(el&&el.value.trim()){addHabit(el.value.trim());el.value=''}}
+function openDayModal(dateStr){S._modalDate=dateStr;renderDayModal(dateStr)}
+function renderDayModal(dateStr){
+  const c=C();
+  const hm=S.habitMonth;
+  const habits=(hm.habits||[]);
+  const byDate=hm.byDate||{};
+  const dayData=byDate[dateStr]||{};
+  const d=new Date(dateStr+'T12:00:00');
+  const label=d.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  let existing=document.getElementById('day-modal-overlay');
+  if(!existing){
+    existing=document.createElement('div');
+    existing.id='day-modal-overlay';
+    existing.onclick=function(e){if(e.target===existing)closeDayModal()};
+    document.body.appendChild(existing);
+  }
+  existing.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;display:flex;align-items:flex-end;justify-content:center';
+  let rows='';
+  habits.forEach(hab=>{
+    const done=dayData[hab.id]||0;
+    rows+=`<div onclick="toggleHabitDate(${hab.id},'${dateStr}')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;margin-bottom:6px;background:${done?'rgba(46,125,66,0.06)':c.surface2};border:1px solid ${done?'rgba(46,125,66,0.15)':c.border};cursor:pointer">
+      <div style="width:22px;height:22px;border-radius:6px;border:2px solid ${done?c.green:c.text3};background:${done?c.green:'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;flex-shrink:0">${done?'✓':''}</div>
+      <div style="font-size:15px;font-weight:500;color:${done?c.text3:c.text};${done?'text-decoration:line-through':''}">${esc(hab.name)}</div>
+    </div>`;
+  });
+  existing.innerHTML=`<div style="width:100%;max-width:520px;background:${c.bg};border-radius:18px 18px 0 0;padding:24px 20px 32px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div style="font-size:16px;font-weight:600;color:${c.text}">${label}</div>
+      <button onclick="closeDayModal()" style="width:28px;height:28px;border-radius:50%;border:none;background:${c.surface2};color:${c.text2};cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
+    </div>
+    ${habits.length===0?`<div style="color:${c.text3};text-align:center;padding:20px">No habits configured.</div>`:rows}
+  </div>`;
+}
+function closeDayModal(){const el=document.getElementById('day-modal-overlay');if(el)el.remove();S._modalDate=null}
 function pomoFromTask(id){const task=S.tasks.find(t=>t.id===id);if(task)startPomo(task.text)}
 function setHobbyTab(t){S.hobbyTab=t;if(t==='chess'&&!S.chessPuzzle)fetchChessPuzzle();if(t==='kannada')fetchPhrases();renderContent()}
 
