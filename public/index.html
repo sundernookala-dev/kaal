@@ -1616,7 +1616,7 @@ function renderDayModal(dateStr){
       <div style="font-size:15px;font-weight:500;color:${done?c.text3:c.text};${done?'text-decoration:line-through':''}">${esc(hab.name)}</div>
     </div>`;
   });
-  existing.innerHTML=`<div style="width:100%;max-width:520px;background:${c.bg};border-radius:18px 18px 0 0;padding:24px 20px 32px;max-height:80vh;overflow-y:auto">
+  existing.innerHTML=`<div style="width:100%;max-width:520px;background:${S.dark?'#1a1a1e':'#faf9f7'};border-radius:18px 18px 0 0;padding:24px 20px 32px;max-height:80vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,0.2)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
       <div style="font-size:16px;font-weight:600;color:${c.text}">${label}</div>
       <button onclick="closeDayModal()" style="width:28px;height:28px;border-radius:50%;border:none;background:${c.surface2};color:${c.text2};cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
