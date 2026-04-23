@@ -1431,7 +1431,7 @@ app.delete('/api/vitamins/:id', (req, res) => {
 
 // Get today's vitamins with due status
 app.get('/api/vitamins/today', (req, res) => {
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = req.query.date || new Date().toLocaleDateString('en-CA');
   const vitamins = db.prepare('SELECT * FROM vitamins WHERE active = 1 ORDER BY id').all();
 
   const result = [];
