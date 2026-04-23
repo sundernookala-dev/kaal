@@ -76,7 +76,7 @@ const S={tab:'meetings',dark:false,birth:'1975-03-31',death:'2065-03-31',events:
   vy:new Date().getFullYear(),vm:new Date().getMonth(),selDay:null,dragId:null,
   taskView:'today',taskDate:new Date().toLocaleDateString('en-CA'),monthTasks:{},tvy:new Date().getFullYear(),tvm:new Date().getMonth(),
   habits:[],habitMonth:{},habitView:'today',hvy:new Date().getFullYear(),hvm:new Date().getMonth(),
-  vitamins:[],allVitamins:[],vitaminDate:new Date().toLocaleDateString('en-CA'),
+  vitamins:[],allVitamins:[],vitaminDate:new Date().toLocaleDateString('en-CA'),vitaminView:'today',vitaminMonth:{},vvy:new Date().getFullYear(),vvm:new Date().getMonth(),
   pomo:{active:false,sessionId:null,taskText:'',timeLeft:0,duration:25,onBreak:false,count:0},pomoToday:{sessions:[],completed:0,totalMinutes:0},
   hobbyTab:'chess',chessPuzzle:null,chessSelected:null,chessMoves:[],chessSolved:false,hobbyProgress:{chess:0,kannada:0,astronomy:0},
   kannadaLesson:0,astroLesson:0,
@@ -125,8 +125,9 @@ async function addHabit(name){await fetch(API+'/habits',{method:'POST',headers:{
 async function deleteHabit(id){await fetch(API+'/habits/'+id,{method:'DELETE'});fetchHabitsToday();fetchHabitMonth()}
 
 async function fetchVitamins(){try{const r=await fetch(API+'/vitamins/today?date='+S.vitaminDate);S.vitamins=await r.json()}catch(e){S.vitamins=[]}renderContent()}
+async function fetchVitaminMonth(){try{const r=await fetch(API+'/vitamins/month?year='+S.vvy+'&month='+(S.vvm+1));S.vitaminMonth=await r.json()}catch(e){S.vitaminMonth={}}renderContent()}
 async function fetchAllVitamins(){try{const r=await fetch(API+'/vitamins');S.allVitamins=await r.json()}catch(e){S.allVitamins=[]}renderContent()}
-async function toggleVitamin(id,slot){await fetch(API+'/vitamins/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time_slot:slot,date:S.vitaminDate})});fetchVitamins()}
+async function toggleVitamin(id,slot){await fetch(API+'/vitamins/'+id+'/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time_slot:slot,date:S.vitaminDate})});fetchVitamins();if(S.vitaminView==='month')fetchVitaminMonth()}
 async function addVitamin(name,type,value,slots,notes){await fetch(API+'/vitamins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,schedule_type:type,schedule_value:parseInt(value)||1,time_slots:slots,notes:notes||''})});fetchVitamins();fetchAllVitamins()}
 async function deleteVitamin(id){await fetch(API+'/vitamins/'+id,{method:'DELETE'});fetchVitamins();fetchAllVitamins()}
 
@@ -324,7 +325,7 @@ function renderTabs(){
   </div>`;
 }
 
-function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?renderVitamins():S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings()}
+function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings()}
 
 function renderTaskHeader(){
   const c=C();
@@ -571,7 +572,78 @@ function renderHabitsMonth(){
   return h;
 }
 
-function renderVitamins(){
+function renderVitaminHeader(){
+  const c=C();
+  let h=`<div style="display:flex;gap:4px;background:${c.surface2};border-radius:8px;padding:3px;border:1px solid ${c.border};margin-bottom:20px;width:fit-content">`;
+  h+=[{k:'today',l:'Today'},{k:'month',l:'Monthly'}].map(v=>`<button onclick="setVitaminView('${v.k}')" style="padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:${S.vitaminView===v.k?'600':'400'};font-family:${FB};background:${S.vitaminView===v.k?c.surface:'transparent'};color:${S.vitaminView===v.k?c.accent:c.text2};${S.vitaminView===v.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${v.l}</button>`).join('');
+  h+=`</div>`;
+  return h;
+}
+
+function renderVitaminsMonth(){
+  const c=C();
+  const vm=S.vitaminMonth;
+  const vitamins=vm.vitamins||[];
+  const byDate=vm.byDate||{};
+  const streaks=vm.streaks||{};
+  const fd=new Date(S.vvy,S.vvm,1).getDay();
+  const dim=new Date(S.vvy,S.vvm+1,0).getDate();
+  const now=new Date();
+  const today=now.getFullYear()===S.vvy&&now.getMonth()===S.vvm?now.getDate():-1;
+
+  let h=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <div><span style="font-size:22px;font-weight:700;color:${c.text}">${MONTHS[S.vvm]}</span> <span style="font-size:22px;font-weight:300;color:${c.text2}">${S.vvy}</span></div>
+    <div style="display:flex;gap:6px">
+      <button onclick="vitaminMonthPrev()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">&lsaquo;</button>
+      <button onclick="vitaminMonthToday()" style="padding:7px 14px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-family:${FM};font-size:11px;font-weight:500">This Month</button>
+      <button onclick="vitaminMonthNext()" style="padding:7px 12px;border-radius:7px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-size:16px">&rsaquo;</button>
+    </div>
+  </div>`;
+
+  if(vitamins.length===0){
+    h+=`<div style="padding:30px;text-align:center;color:${c.text3}">No vitamins configured. Add some in Settings → Manage Vitamins.</div>`;
+    return h;
+  }
+
+  // Streak cards
+  h+=`<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">`;
+  vitamins.forEach(v=>{
+    const streak=streaks[v.id]||0;
+    h+=`<div style="padding:12px 16px;border-radius:10px;background:${c.surface};border:1px solid ${c.border};min-width:140px;flex:1">
+      <div style="font-size:13px;font-weight:600;color:${c.text};margin-bottom:4px">${esc(v.name)}</div>
+      <div style="font-family:${FM};font-size:20px;font-weight:300;color:${streak>0?c.accent:c.text3}">${streak>0?'🔥 '+streak+' days':'No streak'}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // Heatmap per vitamin
+  vitamins.forEach(v=>{
+    h+=`<div style="margin-bottom:16px">`;
+    h+=`<div style="font-size:13px;font-weight:600;color:${c.text};margin-bottom:8px">${esc(v.name)}</div>`;
+    h+=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">`;
+    DAYS.forEach(d=>{h+=`<div style="text-align:center;font-family:${FM};font-size:9px;color:${c.text3};padding:2px">${d.charAt(0)}</div>`});
+    for(let i=0;i<fd;i++) h+=`<div></div>`;
+    for(let day=1;day<=dim;day++){
+      const dateStr=S.vvy+'-'+pad(S.vvm+1)+'-'+pad(day);
+      const dayData=byDate[dateStr]||{};
+      const vitData=dayData[v.id];
+      const isT=day===today;
+      const isFuture=S.vvy>now.getFullYear()||(S.vvy===now.getFullYear()&&S.vvm>now.getMonth())||(S.vvy===now.getFullYear()&&S.vvm===now.getMonth()&&day>now.getDate());
+      let bg,textColor;
+      if(!vitData){bg=c.surface2;textColor=c.text3}
+      else if(vitData.taken>=vitData.total){bg=c.green;textColor='#fff'}
+      else if(vitData.taken>0){bg='rgba(46,125,66,0.35)';textColor='#fff'}
+      else{bg=isT?'rgba(139,105,20,0.08)':c.surface2;textColor=c.text3}
+      const clickable=!isFuture;
+      h+=`<div ${clickable?`onclick="viewVitaminDate('${dateStr}')"`:''} style="aspect-ratio:1;border-radius:4px;background:${bg};display:flex;align-items:center;justify-content:center;font-family:${FM};font-size:10px;color:${textColor};font-weight:${isT?'700':'400'};${clickable?'cursor:pointer':'opacity:0.4'}">${day}</div>`;
+    }
+    h+=`</div></div>`;
+  });
+
+  return h;
+}
+
+function renderVitaminsToday(){
   const c=C();
   const slotLabels={morning:'🌅 Morning',noon:'☀️ Noon',night:'🌙 Night'};
   const slotTimes={morning:S.vitamin_morning||'08:00',noon:S.vitamin_noon||'13:00',night:S.vitamin_night||'21:00'};
@@ -1592,7 +1664,7 @@ function renderSettings(){
 }
 
 function toggleTheme(){S.dark=!S.dark;document.body.className=S.dark?'dark':'';renderHeader();renderCountdownFull();renderTabs();renderContent()}
-function switchTab(t){S.tab=t;S.vitaminDate=new Date().toLocaleDateString('en-CA');renderTabs();if(t==='meetings')fetchEvents();else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}else if(t==='habits'){fetchHabitsToday();fetchPomoToday();fetchVitamins();if(S.habitView==='month')fetchHabitMonth()}else if(t==='vitamins'){fetchVitamins()}else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}else if(t==='kaaya'){fetchWeight()}else if(t==='sadhana'){fetchSadhana()}else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins()};renderContent()}
+function switchTab(t){S.tab=t;S.vitaminDate=new Date().toLocaleDateString('en-CA');renderTabs();if(t==='meetings')fetchEvents();else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}else if(t==='habits'){fetchHabitsToday();fetchPomoToday();fetchVitamins();if(S.habitView==='month')fetchHabitMonth()}else if(t==='vitamins'){fetchVitamins();if(S.vitaminView==='month')fetchVitaminMonth()}else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}else if(t==='kaaya'){fetchWeight()}else if(t==='sadhana'){fetchSadhana()}else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins()};renderContent()}
 function setTaskView(v){S.taskView=v;if(v==='month')fetchMonthTasks();else fetchTasks();renderContent()}
 function viewTaskDate(dateStr){S.taskDate=dateStr;S.taskView='today';fetchTasks();renderContent()}
 function taskDatePrev(){const d=new Date(S.taskDate+'T12:00:00');d.setDate(d.getDate()-1);S.taskDate=d.toLocaleDateString('en-CA');fetchTasks()}
@@ -1601,6 +1673,11 @@ function taskDateToday(){S.taskDate=new Date().toLocaleDateString('en-CA');fetch
 function vitaminDatePrev(){const d=new Date(S.vitaminDate+'T12:00:00');d.setDate(d.getDate()-1);S.vitaminDate=d.toLocaleDateString('en-CA');fetchVitamins()}
 function vitaminDateNext(){const today=new Date().toLocaleDateString('en-CA');if(S.vitaminDate>=today)return;const d=new Date(S.vitaminDate+'T12:00:00');d.setDate(d.getDate()+1);S.vitaminDate=d.toLocaleDateString('en-CA');fetchVitamins()}
 function vitaminDateToday(){S.vitaminDate=new Date().toLocaleDateString('en-CA');fetchVitamins()}
+function setVitaminView(v){S.vitaminView=v;if(v==='month')fetchVitaminMonth();else fetchVitamins();renderContent()}
+function vitaminMonthPrev(){if(S.vvm===0){S.vvm=11;S.vvy--}else S.vvm--;fetchVitaminMonth()}
+function vitaminMonthNext(){if(S.vvm===11){S.vvm=0;S.vvy++}else S.vvm++;fetchVitaminMonth()}
+function vitaminMonthToday(){const n=new Date();S.vvm=n.getMonth();S.vvy=n.getFullYear();fetchVitaminMonth()}
+function viewVitaminDate(dateStr){S.vitaminDate=dateStr;S.vitaminView='today';fetchVitamins();renderContent()}
 function setHabitView(v){S.habitView=v;if(v==='month')fetchHabitMonth();else fetchHabitsToday();renderContent()}
 function habitMonthPrev(){if(S.hvm===0){S.hvm=11;S.hvy--}else S.hvm--;fetchHabitMonth()}
 function habitMonthNext(){if(S.hvm===11){S.hvm=0;S.hvy++}else S.hvm++;fetchHabitMonth()}
