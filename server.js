@@ -1464,6 +1464,64 @@ app.get('/api/vitamins/today', (req, res) => {
   res.json(result);
 });
 
+app.get('/api/vitamins/month', (req, res) => {
+  const y = parseInt(req.query.year) || new Date().getFullYear();
+  const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
+  const prefix = y + '-' + String(m).padStart(2, '0');
+  const vitamins = db.prepare('SELECT * FROM vitamins WHERE active = 1 ORDER BY id').all();
+  const logs = db.prepare('SELECT * FROM vitamin_logs WHERE date LIKE ?').all(prefix + '%');
+
+  // byDate[dateStr][vitamin_id] = { taken, total }
+  const dim = new Date(y, m, 0).getDate();
+  const byDate = {};
+  for (let day = 1; day <= dim; day++) {
+    const dateStr = prefix + '-' + String(day).padStart(2, '0');
+    byDate[dateStr] = {};
+    vitamins.forEach(v => {
+      if (!isVitaminDue(v, dateStr)) return;
+      const slotCount = v.time_slots.split(',').length;
+      byDate[dateStr][v.id] = { total: slotCount, taken: 0 };
+    });
+  }
+  logs.forEach(l => {
+    if (l.taken && byDate[l.date] && byDate[l.date][l.vitamin_id]) {
+      byDate[l.date][l.vitamin_id].taken++;
+    }
+  });
+
+  // Streaks: consecutive due days (most recent backward) where all slots were taken.
+  // Non-due days are skipped (don't count, don't break). Stops before vitamin creation date.
+  const streaks = {};
+  vitamins.forEach(v => {
+    const slotCount = v.time_slots.split(',').length;
+    const createdAt = new Date(v.created_at);
+    createdAt.setHours(0, 0, 0, 0);
+    const d = new Date();
+    let streak = 0;
+    let safety = 400;
+    while (safety-- > 0) {
+      if (d < createdAt) break;
+      const ds = d.toLocaleDateString('en-CA');
+      if (!isVitaminDue(v, ds)) {
+        d.setDate(d.getDate() - 1);
+        continue;
+      }
+      const row = db.prepare(
+        'SELECT COUNT(*) as c FROM vitamin_logs WHERE vitamin_id = ? AND date = ? AND taken = 1'
+      ).get(v.id, ds);
+      if (row.c >= slotCount) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    streaks[v.id] = streak;
+  });
+
+  res.json({ vitamins, byDate, streaks });
+});
+
 app.post('/api/vitamins/:id/toggle', (req, res) => {
   const { time_slot } = req.body;
   const date = req.body.date || new Date().toLocaleDateString('en-CA');
