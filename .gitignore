@@ -9,12 +9,10 @@ token.json
 *.pem
 
 # Database
-kaal.db
-kaal.db-wal
-kaal.db-shm
 *.db
 *.db-wal
 *.db-shm
+!kaal.db
 
 # Logs
 logs/
