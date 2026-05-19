@@ -89,7 +89,8 @@ const S={tab:'meetings',dark:false,birth:'1975-03-31',death:'2065-03-31',events:
   astroView:'learn',selectedPlanet:undefined,astroImages:{},
   sadhanaItems:[],sadhanaDate:new Date().toLocaleDateString('en-CA'),
   weightData:{logs:[],latest:null,change:0,min:0,max:0,avg:0,count:0},weightPeriod:'month',weight_goal:'70',
-  vaultEntries:[],showPwd:{},vaultEditId:null};
+  vaultEntries:[],showPwd:{},vaultEditId:null,
+  boards:[],activeBoardId:null,boardData:null,vichaarSearch:'',vichaarModal:null,boardDragId:null};
 
 // colors
 const LC={accent:'#8b6914',accentBg:'rgba(139,105,20,0.08)',accentBorder:'rgba(139,105,20,0.15)',
@@ -325,14 +326,14 @@ function renderTabs(){
   const c=C();
   document.getElementById('tabs').innerHTML=`
   <div style="display:flex;gap:3px;margin-bottom:24px;background:${c.surface2};border-radius:10px;padding:4px;border:1px solid ${c.border}">
-    ${[{k:'meetings',l:'📅 Meetings'},{k:'tasks',l:'✓ Tasks'},{k:'habits',l:'🔥 Habits'},{k:'vitamins',l:'💊 Vitamins'},{k:'hobbies',l:'🎯 Hobbies'},{k:'kaaya',l:'⚖️ Kaaya'},{k:'sadhana',l:'🧘 Sadhana'},{k:'gupt',l:'🔐 Gupt'},{k:'settings',l:'⚙'}].map(t=>`<button onclick="switchTab('${t.k}')" style="flex:1;padding:10px 0;border-radius:8px;border:none;cursor:pointer;font-family:${FB};font-size:10px;font-weight:${S.tab===t.k?'600':'400'};letter-spacing:0.2px;transition:all 0.2s;
+    ${[{k:'meetings',l:'📅 Meetings'},{k:'tasks',l:'✓ Tasks'},{k:'habits',l:'🔥 Habits'},{k:'vitamins',l:'💊 Vitamins'},{k:'hobbies',l:'🎯 Hobbies'},{k:'kaaya',l:'⚖️ Kaaya'},{k:'sadhana',l:'🧘 Sadhana'},{k:'vichaar',l:'💭 Vichaar'},{k:'gupt',l:'🔐 Gupt'},{k:'settings',l:'⚙'}].map(t=>`<button onclick="switchTab('${t.k}')" style="flex:1;padding:10px 0;border-radius:8px;border:none;cursor:pointer;font-family:${FB};font-size:10px;font-weight:${S.tab===t.k?'600':'400'};letter-spacing:0.2px;transition:all 0.2s;
       background:${S.tab===t.k?c.surface:'transparent'};
       color:${S.tab===t.k?c.accent:c.text2};
       ${S.tab===t.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${t.l}</button>`).join('')}
   </div>`;
 }
 
-function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():S.tab==='gupt'?renderGupt():renderSettings();if(S.tab==='tasks'&&S.taskView==='today')setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},50)}
+function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():S.tab==='vichaar'?renderVichaar():S.tab==='gupt'?renderGupt():renderSettings();if(S.tab==='tasks'&&S.taskView==='today')setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},50)}
 
 function renderTaskHeader(){
   const c=C();
@@ -1673,6 +1674,7 @@ function renderSettings(){
 function toggleTheme(){S.dark=!S.dark;document.body.className=S.dark?'dark':'';renderHeader();renderCountdownFull();renderTabs();renderContent()}
 function switchTab(t){
   if(S.tab==='gupt'&&t!=='gupt'){fetch(API+'/vault/lock',{method:'POST'});S.vaultEntries=[];S.showPwd={};S.vaultEditId=null;vaultStatus={hasPin:false,unlocked:false};}
+  if(S.tab==='vichaar'&&t!=='vichaar'){S.vichaarModal=null;}
   S.tab=t;S.vitaminDate=new Date().toLocaleDateString('en-CA');renderTabs();
   if(t==='meetings')fetchEvents();
   else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}
@@ -1681,6 +1683,7 @@ function switchTab(t){
   else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}
   else if(t==='kaaya'){fetchWeight()}
   else if(t==='sadhana'){fetchSadhana()}
+  else if(t==='vichaar'){S.vichaarModal=null;if(!S.boards.length){fetchBoards();}else if(S.activeBoardId&&!S.boardData){fetchBoardFull(S.activeBoardId);}else renderContent();return;}
   else if(t==='gupt'){loadVaultStatus().then(()=>renderContent());return;}
   else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins();}
   renderContent()
@@ -2101,6 +2104,333 @@ async function doLogout(){
   window.location.reload();
 }
 
+// ─── Vichaar ─────────────────────────────────────────────────────────────────
+let vichaarBoardCards={};
+
+function tagColor(tag){
+  const p=['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#0ea5e9','#f97316'];
+  let h=0; for(let i=0;i<tag.length;i++) h=(h*31+tag.charCodeAt(i))&0x7fff;
+  return p[h%p.length];
+}
+
+async function fetchBoards(){
+  try{const r=await fetch(API+'/boards');S.boards=await r.json();}catch(e){S.boards=[];}
+  renderContent();
+}
+
+async function fetchBoardFull(id){
+  try{
+    const r=await fetch(API+'/boards/'+id+'/full');
+    S.boardData=await r.json();
+    vichaarBoardCards={};
+    S.boardData.columns.forEach(col=>col.cards.forEach(c=>{vichaarBoardCards[c.id]=c;}));
+  }catch(e){S.boardData=null;vichaarBoardCards={};}
+  renderContent();
+}
+
+async function openBoard(id){
+  S.activeBoardId=id;S.boardData=null;S.vichaarSearch='';S.vichaarModal=null;
+  renderContent();
+  fetchBoardFull(id);
+}
+
+function renderVichaar(){
+  const c=C();
+  const modal=S.vichaarModal?renderCardModal(c):'';
+  if(!S.activeBoardId) return renderBoardGrid(c)+modal;
+  if(!S.boardData) return `<div style="text-align:center;padding:80px 20px;color:${c.text2};font-size:14px">Loading...</div>`+modal;
+  return renderBoardView(c)+modal;
+}
+
+function renderBoardGrid(c){
+  let h=`<div style="padding:4px 0">
+    <div style="text-align:center;padding:28px 0 36px">
+      <div style="font-size:30px;font-weight:700;color:${c.text};letter-spacing:-0.5px">💭 Vichaar</div>
+      <div style="font-family:${FM};font-size:10px;color:${c.text3};letter-spacing:2px;margin-top:6px;text-transform:uppercase">Your Personal Boards</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;max-width:880px;margin:0 auto">`;
+
+  S.boards.forEach(b=>{
+    const pct=b.total>0?Math.round(b.done/b.total*100):0;
+    h+=`<div onclick="openBoard(${b.id})"
+      style="background:${c.surface};border:1px solid ${c.border};border-radius:16px;padding:22px 18px 16px;cursor:pointer;transition:all 0.18s"
+      onmouseenter="this.style.boxShadow='0 8px 28px rgba(0,0,0,0.11)';this.style.transform='translateY(-3px)';this.style.borderColor='${c.accent}'"
+      onmouseleave="this.style.boxShadow='none';this.style.transform='none';this.style.borderColor='${c.border}'">
+      <div style="font-size:36px;margin-bottom:10px;line-height:1">${b.emoji}</div>
+      <div style="font-size:14px;font-weight:700;color:${c.text};margin-bottom:3px">${escHtml(b.title)}</div>
+      <div style="font-family:${FM};font-size:10px;color:${c.text3};margin-bottom:14px">${b.colCount} columns · ${b.total} card${b.total!==1?'s':''}</div>
+      <div style="background:${c.surface2};border-radius:4px;height:4px;overflow:hidden;margin-bottom:5px">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${c.accent},#10b981);border-radius:4px"></div>
+      </div>
+      <div style="font-family:${FM};font-size:10px;color:${c.text3}">${b.done} / ${b.total} done</div>
+    </div>`;
+  });
+
+  h+=`<div onclick="createBoard()"
+    style="background:transparent;border:2px dashed ${c.border};border-radius:16px;padding:22px 18px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:156px;transition:all 0.18s"
+    onmouseenter="this.style.borderColor='${c.accent}';this.style.background='${c.accentBg}'"
+    onmouseleave="this.style.borderColor='${c.border}';this.style.background='transparent'">
+    <div style="font-size:28px;color:${c.text3}">+</div>
+    <div style="font-family:${FM};font-size:11px;color:${c.text3}">New Board</div>
+  </div></div></div>`;
+  return h;
+}
+
+function renderBoardView(c){
+  const {board,columns}=S.boardData;
+  const total=columns.reduce((s,col)=>s+col.cards.length,0);
+  const lastCol=columns[columns.length-1];
+  const done=lastCol?lastCol.cards.length:0;
+  const pct=total>0?Math.round(done/total*100):0;
+
+  let h=`<div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button onclick="S.activeBoardId=null;S.boardData=null;S.vichaarSearch='';fetchBoards()"
+        style="padding:5px 12px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};cursor:pointer;font-family:${FM};font-size:11px">← All Boards</button>
+      <span style="font-size:18px">${board.emoji}</span>
+      <span style="font-size:16px;font-weight:700;color:${c.text}">${escHtml(board.title)}</span>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:7px">
+        <div style="width:56px;height:4px;background:${c.surface2};border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${c.accent},#10b981);border-radius:4px"></div>
+        </div>
+        <span style="font-family:${FM};font-size:10px;color:${c.text3}">${pct}% done</span>
+      </div>
+      <button onclick="addColumn(${board.id})"
+        style="padding:5px 13px;border-radius:8px;border:1px solid ${c.accentBorder};background:${c.accentBg};color:${c.accent};cursor:pointer;font-family:${FM};font-size:11px;font-weight:600">+ Column</button>
+      <button onclick="deleteBoardConfirm(${board.id})"
+        style="padding:5px 9px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};color:${c.text3};cursor:pointer;font-size:12px" title="Delete board">🗑</button>
+    </div>
+
+    <input id="vichaar-search" value="${escHtml(S.vichaarSearch)}" oninput="vichaarSearchLive(this.value)"
+      placeholder="🔍  Search cards in this board…"
+      style="width:100%;box-sizing:border-box;padding:9px 14px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};color:${c.text};font-size:13px;outline:none;font-family:${FB};margin-bottom:16px;display:block"
+      onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`;
+
+  // Search results mode
+  if(S.vichaarSearch.trim()){
+    const q=S.vichaarSearch.toLowerCase();
+    const hits=[];
+    columns.forEach(col=>col.cards.forEach(card=>{
+      if((card.title+' '+card.content+' '+card.tags).toLowerCase().includes(q))
+        hits.push({...card,col_title:col.title,col_color:col.color});
+    }));
+    h+=`<div style="font-family:${FM};font-size:10px;color:${c.text3};letter-spacing:1px;margin-bottom:12px">${hits.length} RESULT${hits.length!==1?'S':''} FOR "${escHtml(S.vichaarSearch)}"</div>`;
+    if(!hits.length){
+      h+=`<div style="text-align:center;padding:48px;color:${c.text2}">No cards match "${escHtml(S.vichaarSearch)}"</div>`;
+    }else{
+      h+=`<div style="display:flex;flex-direction:column;gap:8px">`;
+      hits.forEach(card=>{
+        h+=`<div onclick="S.vichaarModal=vichaarBoardCards[${card.id}];renderContent()"
+          style="background:${c.surface};border:1px solid ${c.border};border-radius:10px;padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:12px"
+          onmouseenter="this.style.boxShadow='0 2px 10px rgba(0,0,0,0.08)'" onmouseleave="this.style.boxShadow='none'">
+          ${card.cover_emoji?`<span style="font-size:22px;flex-shrink:0">${card.cover_emoji}</span>`:''}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:${c.text}">${escHtml(card.title)}</div>
+            ${card.content?`<div style="font-size:11px;color:${c.text2};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${escHtml(card.content)}</div>`:''}
+          </div>
+          <span style="font-family:${FM};font-size:10px;font-weight:600;color:${card.col_color};background:${card.col_color}22;padding:3px 10px;border-radius:10px;flex-shrink:0">${escHtml(card.col_title)}</span>
+        </div>`;
+      });
+      h+=`</div>`;
+    }
+    h+=`</div>`;
+    return h;
+  }
+
+  // Kanban board
+  h+=`<div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:20px;align-items:flex-start">`;
+  columns.forEach(col=>{
+    h+=`<div id="vcol-${col.id}"
+      ondragover="event.preventDefault();vichaarDragOver(${col.id})"
+      ondragleave="vichaarDragLeave(${col.id})"
+      ondrop="vichaarDrop(${col.id},event)"
+      style="flex-shrink:0;width:272px;background:${c.surface};border-radius:14px;border:2px solid transparent;transition:border-color 0.15s,background 0.15s">
+
+      <div style="padding:13px 13px 9px;border-bottom:1px solid ${c.border};display:flex;align-items:center;gap:7px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${col.color};flex-shrink:0"></span>
+        <span style="flex:1;font-family:${FM};font-size:10px;font-weight:700;color:${c.text};letter-spacing:0.8px;text-transform:uppercase">${escHtml(col.title)}</span>
+        <span style="font-family:${FM};font-size:10px;color:${c.text3};background:${c.surface2};padding:1px 7px;border-radius:10px">${col.cards.length}</span>
+        <button onclick="deleteColumnConfirm(${col.id})"
+          style="width:20px;height:20px;border-radius:4px;border:none;background:transparent;cursor:pointer;font-size:15px;color:${c.text3};line-height:1;padding:0"
+          onmouseenter="this.style.background='#fee2e2';this.style.color='#c0392b'"
+          onmouseleave="this.style.background='transparent';this.style.color='${c.text3}'"
+          title="Delete column">×</button>
+      </div>
+
+      <div style="padding:10px;min-height:60px;display:flex;flex-direction:column;gap:8px">`;
+
+    col.cards.forEach(card=>{
+      const tags=card.tags?card.tags.split(',').map(t=>t.trim()).filter(Boolean):[];
+      h+=`<div draggable="true"
+        ondragstart="S.boardDragId=${card.id};this.style.opacity='0.5'"
+        ondragend="S.boardDragId=null;this.style.opacity='1';document.querySelectorAll('[id^=vcol-]').forEach(el=>{el.style.borderColor='transparent';el.style.background='${c.surface}'})"
+        onclick="S.vichaarModal=vichaarBoardCards[${card.id}];renderContent()"
+        style="background:${c.surface2};border:1px solid ${c.border};border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s"
+        onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.10)';this.style.transform='translateY(-1px)'"
+        onmouseleave="this.style.boxShadow='none';this.style.transform='none'">
+        ${card.cover_emoji?`<div style="font-size:26px;margin-bottom:8px;line-height:1">${card.cover_emoji}</div>`:''}
+        <div style="font-size:13px;font-weight:600;color:${c.text};line-height:1.4;margin-bottom:${card.content||tags.length?'5px':'0'}">${escHtml(card.title)}</div>
+        ${card.content?`<div style="font-size:11px;color:${c.text2};line-height:1.55;margin-bottom:${tags.length?'6px':'0'};display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(card.content)}</div>`:''}
+        ${tags.length?`<div style="display:flex;flex-wrap:wrap;gap:4px">${tags.map(t=>`<span style="font-family:${FM};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;color:#fff;background:${tagColor(t)}">${escHtml(t)}</span>`).join('')}</div>`:''}
+        ${card.url?`<div style="margin-top:6px"><a href="${escHtml(card.url)}" target="_blank" onclick="event.stopPropagation()" style="font-family:${FM};font-size:10px;color:${c.accent};text-decoration:none" onmouseenter="this.style.textDecoration='underline'" onmouseleave="this.style.textDecoration='none'">🔗 Link</a></div>`:''}
+      </div>`;
+    });
+
+    h+=`</div>
+      <div style="padding:6px 10px 10px">
+        <input placeholder="+ Type to add a card, press Enter…"
+          onkeydown="if(event.key==='Enter'&&this.value.trim()){vichaarAddCard(${col.id},${board.id},this.value.trim());this.value='';event.preventDefault()}"
+          style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px dashed ${c.border};background:transparent;color:${c.text};font-size:12px;outline:none;font-family:${FB};transition:all 0.15s"
+          onfocus="this.style.borderColor='${c.accent}';this.style.background='${c.accentBg}'"
+          onblur="this.style.borderColor='${c.border}';this.style.background='transparent'">
+      </div>
+    </div>`;
+  });
+
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderCardModal(c){
+  const card=S.vichaarModal;
+  if(!card) return '';
+  return `<div onclick="if(event.target===this)closeCardModal()"
+    style="position:fixed;inset:0;background:rgba(0,0,0,0.50);backdrop-filter:blur(3px);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div onclick="event.stopPropagation()"
+      style="background:${c.surface};border-radius:20px;width:100%;max-width:500px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,0.22);max-height:90vh;overflow-y:auto">
+
+      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:20px">
+        <input id="m-emoji" value="${escHtml(card.cover_emoji||'')}" placeholder="🎯"
+          style="width:52px;height:52px;font-size:28px;text-align:center;border-radius:12px;border:1px solid ${c.border};background:${c.surface2};outline:none;flex-shrink:0" title="Cover emoji">
+        <div style="flex:1">
+          <input id="m-title" value="${escHtml(card.title)}" placeholder="Title"
+            style="width:100%;box-sizing:border-box;font-size:16px;font-weight:700;color:${c.text};border:none;border-bottom:2px solid ${c.border};background:transparent;padding:4px 0 6px;outline:none;font-family:${FB}"
+            onfocus="this.style.borderBottomColor='${c.accent}'" onblur="this.style.borderBottomColor='${c.border}'">
+        </div>
+        <button onclick="closeCardModal()"
+          style="width:28px;height:28px;border-radius:50%;border:1px solid ${c.border};background:${c.surface2};cursor:pointer;font-size:16px;color:${c.text2};flex-shrink:0;display:flex;align-items:center;justify-content:center">×</button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <div style="font-family:${FM};font-size:10px;font-weight:700;color:${c.text3};letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px">Notes</div>
+          <textarea id="m-content" rows="4" placeholder="Author, description, why you want to read/watch…"
+            style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:13px;font-family:${FB};resize:vertical;outline:none;line-height:1.6"
+            onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">${escHtml(card.content||'')}</textarea>
+        </div>
+        <div>
+          <div style="font-family:${FM};font-size:10px;font-weight:700;color:${c.text3};letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px">Tags <span style="font-weight:400;font-size:9px;letter-spacing:0;text-transform:none">(comma separated)</span></div>
+          <input id="m-tags" value="${escHtml(card.tags||'')}" placeholder="Fiction, Must-Read, Favourite"
+            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:13px;font-family:${FB};outline:none"
+            onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">
+        </div>
+        <div>
+          <div style="font-family:${FM};font-size:10px;font-weight:700;color:${c.text3};letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px">Link</div>
+          <input id="m-url" value="${escHtml(card.url||'')}" type="url" placeholder="https://goodreads.com/…"
+            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:13px;font-family:${FB};outline:none"
+            onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:20px">
+        <button onclick="saveCardModal()"
+          style="flex:1;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,${c.accent},#b8860b);color:#fff;font-family:${FM};font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px">Save Changes</button>
+        <button onclick="vichaarDeleteCard()"
+          style="padding:12px 18px;border-radius:10px;border:none;background:#fee2e2;color:#c0392b;font-family:${FM};font-size:12px;font-weight:600;cursor:pointer">Delete</button>
+        <button onclick="closeCardModal()"
+          style="padding:12px 18px;border-radius:10px;border:1px solid ${c.border};background:${c.surface2};color:${c.text2};font-family:${FM};font-size:12px;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function closeCardModal(){S.vichaarModal=null;renderContent();}
+
+async function saveCardModal(){
+  if(!S.vichaarModal) return;
+  const title=document.getElementById('m-title')?.value.trim();
+  if(!title) return;
+  await fetch(API+'/cards/'+S.vichaarModal.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    title,
+    content:document.getElementById('m-content')?.value||'',
+    tags:document.getElementById('m-tags')?.value||'',
+    url:document.getElementById('m-url')?.value||'',
+    cover_emoji:document.getElementById('m-emoji')?.value||''
+  })});
+  S.vichaarModal=null;
+  fetchBoardFull(S.activeBoardId);
+}
+
+async function vichaarDeleteCard(){
+  if(!S.vichaarModal||!confirm('Delete this card?')) return;
+  const id=S.vichaarModal.id;
+  S.vichaarModal=null;
+  await fetch(API+'/cards/'+id,{method:'DELETE'});
+  fetchBoardFull(S.activeBoardId);
+}
+
+async function vichaarAddCard(colId,boardId,title){
+  await fetch(API+'/cards',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({column_id:colId,board_id:boardId,title})});
+  fetchBoardFull(boardId);
+}
+
+function vichaarDragOver(colId){
+  const el=document.getElementById('vcol-'+colId);const c=C();
+  if(el){el.style.borderColor=c.accent;el.style.background=c.accentBg;}
+}
+
+function vichaarDragLeave(colId){
+  const el=document.getElementById('vcol-'+colId);const c=C();
+  if(el){el.style.borderColor='transparent';el.style.background=c.surface;}
+}
+
+async function vichaarDrop(colId,event){
+  event.preventDefault();
+  const cardId=S.boardDragId;S.boardDragId=null;
+  const c=C();
+  document.querySelectorAll('[id^=vcol-]').forEach(el=>{el.style.borderColor='transparent';el.style.background=c.surface;});
+  if(!cardId) return;
+  await fetch(API+'/cards/'+cardId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({column_id:colId})});
+  fetchBoardFull(S.activeBoardId);
+}
+
+async function addColumn(boardId){
+  const title=prompt('New column name:');
+  if(!title||!title.trim()) return;
+  await fetch(API+'/boards/'+boardId+'/columns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.trim()})});
+  fetchBoardFull(boardId);
+}
+
+async function deleteColumnConfirm(colId){
+  if(!confirm('Delete this column and all its cards?')) return;
+  await fetch(API+'/columns/'+colId,{method:'DELETE'});
+  fetchBoardFull(S.activeBoardId);
+}
+
+async function createBoard(){
+  const title=prompt('Board name (e.g. "Reading List", "Project Ideas"):');
+  if(!title||!title.trim()) return;
+  const emoji=prompt('Emoji for this board (e.g. 📚 🎬 🎯):')||'📋';
+  const r=await fetch(API+'/boards',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.trim(),emoji:emoji.trim().slice(0,4)})});
+  const d=await r.json();
+  await fetchBoards();
+  openBoard(d.id);
+}
+
+async function deleteBoardConfirm(boardId){
+  if(!confirm('Delete this entire board and all its cards? This cannot be undone.')) return;
+  await fetch(API+'/boards/'+boardId,{method:'DELETE'});
+  S.activeBoardId=null;S.boardData=null;
+  fetchBoards();
+}
+
+function vichaarSearchLive(q){
+  S.vichaarSearch=q;renderContent();
+  const el=document.getElementById('vichaar-search');
+  if(el){el.focus();el.setSelectionRange(q.length,q.length);}
+}
+
 // ─── Vault ───────────────────────────────────────────────────────────────────
 let vaultStatus={hasPin:false,unlocked:false};
 
@@ -2308,6 +2638,7 @@ function initApp(){
 
 checkAuth();
 setInterval(()=>{tickCD();tickPomo()},1000);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.vichaarModal){closeCardModal();}});
 </script>
 </body>
 </html>

@@ -166,6 +166,36 @@ db.exec(`
     auth_tag TEXT NOT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS boards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    emoji TEXT DEFAULT '📋',
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
+
+  CREATE TABLE IF NOT EXISTS board_columns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    color TEXT DEFAULT '#94a3b8',
+    sort_order INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS board_cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    column_id INTEGER NOT NULL,
+    board_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT DEFAULT '',
+    tags TEXT DEFAULT '',
+    url TEXT DEFAULT '',
+    cover_emoji TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
 `);
 
 // Initialize default settings
@@ -182,6 +212,23 @@ initSetting('vitamin_morning', '08:00');
 initSetting('vitamin_noon', '13:00');
 initSetting('vitamin_night', '21:00');
 initSetting('weight_goal', '70');
+
+// Seed starter boards for Vichaar (runs once — skipped if boards already exist)
+(function seedVichaarBoards() {
+  if (db.prepare('SELECT COUNT(*) as n FROM boards').get().n > 0) return;
+  const colColors = ['#6366f1', '#f59e0b', '#10b981', '#94a3b8'];
+  [
+    { title: 'Books',      emoji: '📚', cols: ['Pending', 'Reading', 'Completed', 'Abandoned'] },
+    { title: 'Movies',     emoji: '🎬', cols: ['Watchlist', 'Watching', 'Watched', 'Not Worth It'] },
+    { title: 'Life Goals', emoji: '🎯', cols: ['Dream', 'In Progress', 'Achieved', 'Shelved'] },
+    { title: 'Travel',     emoji: '✈️', cols: ['Wish List', 'Planning', 'Visited'] },
+  ].forEach((b, bi) => {
+    const boardId = db.prepare('INSERT INTO boards (title, emoji, sort_order) VALUES (?, ?, ?)').run(b.title, b.emoji, bi).lastInsertRowid;
+    b.cols.forEach((col, ci) => {
+      db.prepare('INSERT INTO board_columns (board_id, title, color, sort_order) VALUES (?, ?, ?, ?)').run(boardId, col, colColors[ci] || '#94a3b8', ci);
+    });
+  });
+})();
 
 // Seed sadhana items if not exist
 const sadhanaCount = db.prepare('SELECT COUNT(*) as c FROM sadhana_items').get().c;
@@ -2038,6 +2085,115 @@ app.post('/api/hobbies/progress', (req, res) => {
   const { hobby, lesson_id, data } = req.body;
   db.prepare("INSERT INTO hobby_progress (hobby, lesson_id, data) VALUES (?, ?, ?)")
     .run(hobby, lesson_id || 0, JSON.stringify(data || {}));
+  res.json({ ok: true });
+});
+
+// ─── Vichaar (boards / kanban) ───────────────────────────────────────────────
+
+app.get('/api/boards', (req, res) => {
+  const boards = db.prepare('SELECT * FROM boards ORDER BY sort_order, id').all();
+  boards.forEach(b => {
+    const cols = db.prepare('SELECT * FROM board_columns WHERE board_id=? ORDER BY sort_order, id').all(b.id);
+    b.colCount = cols.length;
+    b.total = db.prepare('SELECT COUNT(*) as n FROM board_cards WHERE board_id=?').get(b.id).n;
+    const lastCol = cols[cols.length - 1];
+    b.done = lastCol ? db.prepare('SELECT COUNT(*) as n FROM board_cards WHERE column_id=?').get(lastCol.id).n : 0;
+  });
+  res.json(boards);
+});
+
+app.post('/api/boards', (req, res) => {
+  const { title, emoji } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title required' });
+  const max = db.prepare('SELECT MAX(sort_order) as m FROM boards').get().m || 0;
+  const id = db.prepare('INSERT INTO boards (title, emoji, sort_order) VALUES (?, ?, ?)').run(title.trim(), emoji || '📋', max + 1).lastInsertRowid;
+  db.prepare('INSERT INTO board_columns (board_id, title, color, sort_order) VALUES (?, ?, ?, ?)').run(id, 'To Do', '#6366f1', 0);
+  db.prepare('INSERT INTO board_columns (board_id, title, color, sort_order) VALUES (?, ?, ?, ?)').run(id, 'Done', '#10b981', 1);
+  res.json({ id });
+});
+
+app.put('/api/boards/:id', (req, res) => {
+  const { title, emoji } = req.body;
+  if (title) db.prepare('UPDATE boards SET title=? WHERE id=?').run(title.trim(), req.params.id);
+  if (emoji) db.prepare('UPDATE boards SET emoji=? WHERE id=?').run(emoji, req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/boards/:id', (req, res) => {
+  db.prepare('DELETE FROM board_cards WHERE board_id=?').run(req.params.id);
+  db.prepare('DELETE FROM board_columns WHERE board_id=?').run(req.params.id);
+  db.prepare('DELETE FROM boards WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/boards/:id/full', (req, res) => {
+  const board = db.prepare('SELECT * FROM boards WHERE id=?').get(req.params.id);
+  if (!board) return res.status(404).json({ error: 'Not found' });
+  const columns = db.prepare('SELECT * FROM board_columns WHERE board_id=? ORDER BY sort_order, id').all(req.params.id);
+  const cards = db.prepare('SELECT * FROM board_cards WHERE board_id=? ORDER BY sort_order, id').all(req.params.id);
+  columns.forEach(col => { col.cards = cards.filter(c => c.column_id === col.id); });
+  res.json({ board, columns });
+});
+
+app.post('/api/boards/:id/columns', (req, res) => {
+  const { title } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title required' });
+  const max = db.prepare('SELECT MAX(sort_order) as m FROM board_columns WHERE board_id=?').get(req.params.id).m || 0;
+  const id = db.prepare('INSERT INTO board_columns (board_id, title, color, sort_order) VALUES (?, ?, ?, ?)').run(req.params.id, title.trim(), '#94a3b8', max + 1).lastInsertRowid;
+  res.json({ id });
+});
+
+app.put('/api/columns/:id', (req, res) => {
+  const { title, color } = req.body;
+  if (title) db.prepare('UPDATE board_columns SET title=? WHERE id=?').run(title.trim(), req.params.id);
+  if (color) db.prepare('UPDATE board_columns SET color=? WHERE id=?').run(color, req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/columns/:id', (req, res) => {
+  db.prepare('DELETE FROM board_cards WHERE column_id=?').run(req.params.id);
+  db.prepare('DELETE FROM board_columns WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /api/cards/search must be defined before PUT/DELETE /api/cards/:id to avoid id="search" match
+app.get('/api/cards/search', (req, res) => {
+  const q = '%' + (req.query.q || '') + '%';
+  const cards = db.prepare(`
+    SELECT bc.*, b.title as board_title, b.emoji as board_emoji, col.title as col_title, col.color as col_color
+    FROM board_cards bc
+    JOIN boards b ON bc.board_id = b.id
+    JOIN board_columns col ON bc.column_id = col.id
+    WHERE bc.title LIKE ? OR bc.content LIKE ? OR bc.tags LIKE ?
+    ORDER BY bc.updated_at DESC LIMIT 50
+  `).all(q, q, q);
+  res.json(cards);
+});
+
+app.post('/api/cards', (req, res) => {
+  const { column_id, board_id, title, content, tags, url, cover_emoji } = req.body;
+  if (!column_id || !board_id || !title) return res.status(400).json({ error: 'Required: column_id, board_id, title' });
+  const max = db.prepare('SELECT MAX(sort_order) as m FROM board_cards WHERE column_id=?').get(column_id).m || 0;
+  const id = db.prepare('INSERT INTO board_cards (column_id, board_id, title, content, tags, url, cover_emoji, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(column_id, board_id, title.trim(), content || '', tags || '', url || '', cover_emoji || '', max + 1).lastInsertRowid;
+  res.json({ id });
+});
+
+app.put('/api/cards/:id', (req, res) => {
+  const allowed = ['column_id', 'title', 'content', 'tags', 'url', 'cover_emoji'];
+  const sets = [], vals = [];
+  allowed.forEach(f => {
+    if (req.body[f] !== undefined) { sets.push(`${f}=?`); vals.push(f === 'title' ? String(req.body[f]).trim() : req.body[f]); }
+  });
+  if (!sets.length) return res.json({ ok: true });
+  sets.push("updated_at=datetime('now','localtime')");
+  vals.push(req.params.id);
+  db.prepare(`UPDATE board_cards SET ${sets.join(',')} WHERE id=?`).run(...vals);
+  res.json({ ok: true });
+});
+
+app.delete('/api/cards/:id', (req, res) => {
+  db.prepare('DELETE FROM board_cards WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
 
