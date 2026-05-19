@@ -156,6 +156,16 @@ db.exec(`
     notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT (datetime('now','localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS vault_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_name TEXT NOT NULL,
+    username TEXT NOT NULL,
+    encrypted_password TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    auth_tag TEXT NOT NULL,
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
 `);
 
 // Initialize default settings
@@ -1190,6 +1200,36 @@ function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
 }
 
+// ─── Vault ───────────────────────────────────────────────────────────────────
+let vaultKey = null;
+
+function deriveVaultKey(pin) {
+  let salt = getSetting('vault_key_salt');
+  if (!salt) {
+    salt = crypto.randomBytes(32).toString('hex');
+    setSetting('vault_key_salt', salt);
+  }
+  return crypto.pbkdf2Sync(pin, salt, 200000, 32, 'sha256');
+}
+
+function encryptSecret(plaintext, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return { encrypted_password: enc.toString('hex'), iv: iv.toString('hex'), auth_tag: cipher.getAuthTag().toString('hex') };
+}
+
+function decryptSecret(entry, key) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(entry.iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(entry.auth_tag, 'hex'));
+  return Buffer.concat([decipher.update(Buffer.from(entry.encrypted_password, 'hex')), decipher.final()]).toString('utf8');
+}
+
+function requireVault(req, res, next) {
+  if (!vaultKey) return res.status(403).json({ error: 'Vault locked' });
+  next();
+}
+
 function requireAuth(req, res, next) {
   const token = getCookie(req, 'kaal_session');
   if (token && sessions.has(token)) return next();
@@ -1235,6 +1275,7 @@ app.post('/api/auth/login', (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   const token = getCookie(req, 'kaal_session');
   if (token) sessions.delete(token);
+  vaultKey = null;
   clearSessionCookie(res);
   res.json({ ok: true });
 });
@@ -1247,6 +1288,69 @@ app.post('/api/auth/change-pin', (req, res) => {
   if (!stored || !verifyPin(currentPin, stored)) return res.status(401).json({ error: 'Wrong current PIN' });
   if (!newPin || !/^\d{6}$/.test(newPin)) return res.status(400).json({ error: 'New PIN must be 6 digits' });
   setSetting('pin_hash', hashPin(newPin));
+  res.json({ ok: true });
+});
+
+// ─── Vault routes ────────────────────────────────────────────────────────────
+app.get('/api/vault/status', (req, res) => {
+  res.json({ hasPin: !!getSetting('vault_pin_hash'), unlocked: !!vaultKey });
+});
+
+app.post('/api/vault/setup', (req, res) => {
+  const { pin } = req.body;
+  if (!pin || !/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'PIN must be 6 digits' });
+  if (getSetting('vault_pin_hash')) return res.status(400).json({ error: 'Vault PIN already set' });
+  setSetting('vault_pin_hash', hashPin(pin));
+  vaultKey = deriveVaultKey(pin);
+  res.json({ ok: true });
+});
+
+app.post('/api/vault/unlock', (req, res) => {
+  const { pin } = req.body;
+  const stored = getSetting('vault_pin_hash');
+  if (!stored) return res.status(400).json({ error: 'No vault PIN set' });
+  if (!pin || !verifyPin(pin, stored)) return res.status(401).json({ error: 'Wrong PIN' });
+  vaultKey = deriveVaultKey(pin);
+  res.json({ ok: true });
+});
+
+app.post('/api/vault/lock', (req, res) => {
+  vaultKey = null;
+  res.json({ ok: true });
+});
+
+app.get('/api/vault/entries', requireVault, (req, res) => {
+  const rows = db.prepare('SELECT * FROM vault_entries ORDER BY app_name COLLATE NOCASE').all();
+  const entries = rows.map(r => ({
+    id: r.id,
+    app_name: r.app_name,
+    username: r.username,
+    password: decryptSecret(r, vaultKey),
+    created_at: r.created_at,
+  }));
+  res.json(entries);
+});
+
+app.post('/api/vault/entries', requireVault, (req, res) => {
+  const { app_name, username, password } = req.body;
+  if (!app_name || !username || !password) return res.status(400).json({ error: 'All fields required' });
+  const enc = encryptSecret(password, vaultKey);
+  const result = db.prepare('INSERT INTO vault_entries (app_name, username, encrypted_password, iv, auth_tag) VALUES (?, ?, ?, ?, ?)')
+    .run(app_name.trim(), username.trim(), enc.encrypted_password, enc.iv, enc.auth_tag);
+  res.json({ id: result.lastInsertRowid });
+});
+
+app.put('/api/vault/entries/:id', requireVault, (req, res) => {
+  const { app_name, username, password } = req.body;
+  if (!app_name || !username || !password) return res.status(400).json({ error: 'All fields required' });
+  const enc = encryptSecret(password, vaultKey);
+  db.prepare('UPDATE vault_entries SET app_name=?, username=?, encrypted_password=?, iv=?, auth_tag=? WHERE id=?')
+    .run(app_name.trim(), username.trim(), enc.encrypted_password, enc.iv, enc.auth_tag, req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/vault/entries/:id', requireVault, (req, res) => {
+  db.prepare('DELETE FROM vault_entries WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
 

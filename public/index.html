@@ -88,7 +88,8 @@ const S={tab:'meetings',dark:false,birth:'1975-03-31',death:'2065-03-31',events:
   kannadaInput:'',kannadaResult:null,kannadaLoading:false,savedPhrases:[],phrasesView:'translate',
   astroView:'learn',selectedPlanet:undefined,astroImages:{},
   sadhanaItems:[],sadhanaDate:new Date().toLocaleDateString('en-CA'),
-  weightData:{logs:[],latest:null,change:0,min:0,max:0,avg:0,count:0},weightPeriod:'month',weight_goal:'70'};
+  weightData:{logs:[],latest:null,change:0,min:0,max:0,avg:0,count:0},weightPeriod:'month',weight_goal:'70',
+  vaultEntries:[],showPwd:{},vaultEditId:null};
 
 // colors
 const LC={accent:'#8b6914',accentBg:'rgba(139,105,20,0.08)',accentBorder:'rgba(139,105,20,0.15)',
@@ -324,14 +325,14 @@ function renderTabs(){
   const c=C();
   document.getElementById('tabs').innerHTML=`
   <div style="display:flex;gap:3px;margin-bottom:24px;background:${c.surface2};border-radius:10px;padding:4px;border:1px solid ${c.border}">
-    ${[{k:'meetings',l:'📅 Meetings'},{k:'tasks',l:'✓ Tasks'},{k:'habits',l:'🔥 Habits'},{k:'vitamins',l:'💊 Vitamins'},{k:'hobbies',l:'🎯 Hobbies'},{k:'kaaya',l:'⚖️ Kaaya'},{k:'sadhana',l:'🧘 Sadhana'},{k:'settings',l:'⚙'}].map(t=>`<button onclick="switchTab('${t.k}')" style="flex:1;padding:10px 0;border-radius:8px;border:none;cursor:pointer;font-family:${FB};font-size:10px;font-weight:${S.tab===t.k?'600':'400'};letter-spacing:0.2px;transition:all 0.2s;
+    ${[{k:'meetings',l:'📅 Meetings'},{k:'tasks',l:'✓ Tasks'},{k:'habits',l:'🔥 Habits'},{k:'vitamins',l:'💊 Vitamins'},{k:'hobbies',l:'🎯 Hobbies'},{k:'kaaya',l:'⚖️ Kaaya'},{k:'sadhana',l:'🧘 Sadhana'},{k:'gupt',l:'🔐 Gupt'},{k:'settings',l:'⚙'}].map(t=>`<button onclick="switchTab('${t.k}')" style="flex:1;padding:10px 0;border-radius:8px;border:none;cursor:pointer;font-family:${FB};font-size:10px;font-weight:${S.tab===t.k?'600':'400'};letter-spacing:0.2px;transition:all 0.2s;
       background:${S.tab===t.k?c.surface:'transparent'};
       color:${S.tab===t.k?c.accent:c.text2};
       ${S.tab===t.k?'box-shadow:0 1px 3px rgba(0,0,0,0.08)':''}">${t.l}</button>`).join('')}
   </div>`;
 }
 
-function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings();if(S.tab==='tasks'&&S.taskView==='today')setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},50)}
+function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():S.tab==='gupt'?renderGupt():renderSettings();if(S.tab==='tasks'&&S.taskView==='today')setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},50)}
 
 function renderTaskHeader(){
   const c=C();
@@ -1670,7 +1671,20 @@ function renderSettings(){
 }
 
 function toggleTheme(){S.dark=!S.dark;document.body.className=S.dark?'dark':'';renderHeader();renderCountdownFull();renderTabs();renderContent()}
-function switchTab(t){S.tab=t;S.vitaminDate=new Date().toLocaleDateString('en-CA');renderTabs();if(t==='meetings')fetchEvents();else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}else if(t==='habits'){fetchHabitsToday();fetchPomoToday();fetchVitamins();if(S.habitView==='month')fetchHabitMonth()}else if(t==='vitamins'){fetchVitamins();if(S.vitaminView==='month')fetchVitaminMonth()}else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}else if(t==='kaaya'){fetchWeight()}else if(t==='sadhana'){fetchSadhana()}else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins()};renderContent()}
+function switchTab(t){
+  if(S.tab==='gupt'&&t!=='gupt'){fetch(API+'/vault/lock',{method:'POST'});S.vaultEntries=[];S.showPwd={};S.vaultEditId=null;vaultStatus={hasPin:false,unlocked:false};}
+  S.tab=t;S.vitaminDate=new Date().toLocaleDateString('en-CA');renderTabs();
+  if(t==='meetings')fetchEvents();
+  else if(t==='tasks'){fetchTasks();fetchPomoToday();if(S.taskView==='month')fetchMonthTasks()}
+  else if(t==='habits'){fetchHabitsToday();fetchPomoToday();fetchVitamins();if(S.habitView==='month')fetchHabitMonth()}
+  else if(t==='vitamins'){fetchVitamins();if(S.vitaminView==='month')fetchVitaminMonth()}
+  else if(t==='hobbies'){fetchHobbyProgress();if(!S.chessPuzzle)fetchChessPuzzle()}
+  else if(t==='kaaya'){fetchWeight()}
+  else if(t==='sadhana'){fetchSadhana()}
+  else if(t==='gupt'){loadVaultStatus().then(()=>renderContent());return;}
+  else{fetchSettings();fetchDefaults();fetchHabitsToday();fetchVitamins();fetchAllVitamins();}
+  renderContent()
+}
 function setTaskView(v){S.taskView=v;if(v==='month')fetchMonthTasks();else fetchTasks();renderContent()}
 function viewTaskDate(dateStr){S.taskDate=dateStr;S.taskView='today';fetchTasks();renderContent()}
 function taskDatePrev(){const d=new Date(S.taskDate+'T12:00:00');d.setDate(d.getDate()-1);S.taskDate=d.toLocaleDateString('en-CA');fetchTasks()}
@@ -2085,6 +2099,190 @@ async function doSetupPin(){
 async function doLogout(){
   await fetch(API+'/auth/logout',{method:'POST'}).catch(()=>{});
   window.location.reload();
+}
+
+// ─── Vault ───────────────────────────────────────────────────────────────────
+let vaultStatus={hasPin:false,unlocked:false};
+
+async function loadVaultStatus(){
+  try{const r=await fetch(API+'/vault/status');vaultStatus=await r.json();}catch(e){}
+}
+
+function renderGupt(){
+  const c=C();
+  if(!vaultStatus.unlocked) return renderVaultLock(c);
+  return renderVaultOpen(c);
+}
+
+function renderVaultLock(c){
+  const isSetup=!vaultStatus.hasPin;
+  return `<div style="display:flex;align-items:center;justify-content:center;min-height:420px">
+  <div style="width:360px;padding:44px 40px;border-radius:24px;background:${c.surface};border:1px solid ${c.border};text-align:center">
+    <div style="font-size:44px;margin-bottom:12px">🔐</div>
+    <div style="font-family:${FM};font-size:11px;color:${c.text3};letter-spacing:2px;margin-bottom:6px">GUPT VAULT</div>
+    <div style="font-size:15px;font-weight:600;color:${c.text};margin-bottom:28px">${isSetup?'Set a 6-digit vault PIN':'Enter vault PIN to unlock'}</div>
+    ${isSetup?`
+      <div style="font-size:12px;color:${c.text2};margin-bottom:10px">Choose PIN</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">${[0,1,2,3,4,5].map(i=>`<input id="pv${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="vaultPinKey('pv',${i},event)" oninput="vaultPinInput('pv',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:${c.surface2};color:${c.text};text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+      <div style="font-size:12px;color:${c.text2};margin-bottom:10px">Confirm PIN</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:24px">${[0,1,2,3,4,5].map(i=>`<input id="pw${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="vaultPinKey('pw',${i},event)" oninput="vaultPinInput('pw',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:${c.surface2};color:${c.text};text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+      <div id="vault-err" style="font-family:${FM};font-size:12px;color:#c0392b;min-height:18px;margin-bottom:12px"></div>
+      <button onclick="doVaultSetup()" style="width:100%;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,${c.accent},#b8860b);color:#fff;font-size:15px;font-weight:600;font-family:${FB};cursor:pointer">Set Vault PIN</button>
+    `:`
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:24px">${[0,1,2,3,4,5].map(i=>`<input id="pv${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="vaultPinKey('pv',${i},event)" oninput="vaultPinInput('pv',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:${c.surface2};color:${c.text};text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+      <div id="vault-err" style="font-family:${FM};font-size:12px;color:#c0392b;min-height:18px;margin-bottom:12px"></div>
+      <button onclick="doVaultUnlock()" style="width:100%;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,${c.accent},#b8860b);color:#fff;font-size:15px;font-weight:600;font-family:${FB};cursor:pointer">Unlock</button>
+    `}
+  </div></div>`;
+}
+
+function renderVaultOpen(c){
+  const editing=S.vaultEditId;
+  const editEntry=editing?S.vaultEntries.find(e=>e.id===editing):null;
+  let h=`<div style="max-width:680px;margin:0 auto">`;
+  // Add/Edit form
+  h+=`<div style="background:${c.surface};border:1px solid ${c.border};border-radius:12px;padding:20px;margin-bottom:20px">
+    <div style="font-family:${FM};font-size:10px;font-weight:600;color:${c.text2};letter-spacing:1.5px;text-transform:uppercase;margin-bottom:14px">${editing?'EDIT ENTRY':'ADD ENTRY'}</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="v-app" placeholder="App / Website (e.g. Gmail, HDFC Bank)" value="${editing&&editEntry?escHtml(editEntry.app_name):''}" style="padding:10px 14px;border-radius:8px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:14px;outline:none;font-family:${FB}">
+      <input id="v-user" placeholder="Username / Email / Phone number" value="${editing&&editEntry?escHtml(editEntry.username):''}" style="padding:10px 14px;border-radius:8px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:14px;outline:none;font-family:${FB}">
+      <div style="display:flex;gap:8px">
+        <input id="v-pwd" type="password" placeholder="Password" value="${editing&&editEntry?editEntry.password:''}" style="flex:1;padding:10px 14px;border-radius:8px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-size:14px;outline:none;font-family:monospace">
+        <button onclick="const el=document.getElementById('v-pwd');el.type=el.type==='password'?'text':'password'" title="Show/hide" style="padding:10px 14px;border-radius:8px;border:1px solid ${c.border};background:${c.surface2};cursor:pointer;font-size:15px">👁</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="${editing?'saveVaultEdit()':'addVaultEntry()'}" style="flex:1;padding:10px;border-radius:8px;border:none;background:${c.accent};color:#fff;font-family:${FM};font-size:12px;font-weight:600;cursor:pointer">${editing?'Save Changes':'+ Add Entry'}</button>
+        ${editing?`<button onclick="cancelVaultEdit()" style="padding:10px 16px;border-radius:8px;border:1px solid ${c.border};background:${c.surface2};color:${c.text2};font-family:${FM};font-size:12px;cursor:pointer">Cancel</button>`:''}
+      </div>
+    </div>
+  </div>`;
+  // Entries list
+  if(S.vaultEntries.length===0){
+    h+=`<div style="text-align:center;padding:60px 20px;color:${c.text2};font-size:14px">No passwords saved yet.<br>Add your first entry above.</div>`;
+  }else{
+    h+=`<div style="display:flex;flex-direction:column;gap:8px">`;
+    S.vaultEntries.forEach(e=>{
+      const show=!!S.showPwd[e.id];
+      const safePwd=e.password.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      h+=`<div style="background:${c.surface};border:1px solid ${c.border};border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;color:${c.text};margin-bottom:2px">${escHtml(e.app_name)}</div>
+          <div style="font-family:${FM};font-size:12px;color:${c.text2};margin-bottom:6px">${escHtml(e.username)}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-family:monospace;font-size:13px;color:${c.text};letter-spacing:1px;word-break:break-all">${show?escHtml(e.password):'••••••••'}</span>
+            <button onclick="S.showPwd[${e.id}]=!S.showPwd[${e.id}];renderContent()" style="padding:2px 8px;border-radius:4px;border:1px solid ${c.border};background:transparent;cursor:pointer;font-size:11px;color:${c.text2};font-family:${FM}">${show?'hide':'show'}</button>
+            ${show?`<button onclick="navigator.clipboard.writeText('${safePwd}');this.textContent='✓ copied';setTimeout(()=>this.textContent='copy',1500)" style="padding:2px 8px;border-radius:4px;border:1px solid ${c.border};background:transparent;cursor:pointer;font-size:11px;color:${c.text2};font-family:${FM}">copy</button>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="startVaultEdit(${e.id})" style="padding:6px 10px;border-radius:6px;border:1px solid ${c.border};background:${c.surface2};cursor:pointer;font-size:12px;color:${c.text2};font-family:${FM}">Edit</button>
+          <button onclick="deleteVaultEntry(${e.id})" style="padding:6px 10px;border-radius:6px;border:none;background:#fee2e2;cursor:pointer;font-size:12px;color:#c0392b;font-family:${FM}">Delete</button>
+        </div>
+      </div>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`<div style="text-align:center;margin-top:24px;margin-bottom:8px">
+    <button onclick="lockVault()" style="padding:10px 24px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};color:${c.text2};font-family:${FM};font-size:12px;cursor:pointer">🔒 Lock Vault</button>
+  </div></div>`;
+  return h;
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function vaultPinInput(prefix,i){
+  const el=document.getElementById(prefix+i);
+  el.value=el.value.replace(/[^0-9]/g,'').slice(-1);
+  if(el.value&&i<5){const nx=document.getElementById(prefix+(i+1));if(nx)nx.focus();}
+  if(prefix==='pv'&&i===5&&el.value){
+    const pin=[0,1,2,3,4,5].map(j=>document.getElementById('pv'+j)?.value||'').join('');
+    if(pin.length===6&&!document.getElementById('pw0')) doVaultUnlock();
+  }
+}
+
+function vaultPinKey(prefix,i,e){
+  if(e.key==='Backspace'&&!document.getElementById(prefix+i).value&&i>0){
+    const pv=document.getElementById(prefix+(i-1));if(pv){pv.value='';pv.focus();}
+  }
+  if(e.key==='Enter'){if(document.getElementById('pw0')) doVaultSetup(); else doVaultUnlock();}
+}
+
+function getVaultPin(prefix){return [0,1,2,3,4,5].map(i=>{const el=document.getElementById(prefix+i);return el?el.value:''}).join('');}
+
+function setVaultErr(msg){const el=document.getElementById('vault-err');if(el)el.textContent=msg;}
+
+async function doVaultSetup(){
+  const pin=getVaultPin('pv'),conf=getVaultPin('pw');
+  if(pin.length<6){setVaultErr('Enter all 6 digits for your PIN');return;}
+  if(conf.length<6){setVaultErr('Enter all 6 digits to confirm');return;}
+  if(pin!==conf){setVaultErr('PINs do not match — try again');[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById('pw'+i);if(el)el.value='';});setTimeout(()=>{const f=document.getElementById('pw0');if(f)f.focus();},50);return;}
+  try{
+    const r=await fetch(API+'/vault/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    const d=await r.json();
+    if(d.ok){vaultStatus={hasPin:true,unlocked:true};await fetchVaultEntries();}
+    else setVaultErr(d.error||'Error — try again');
+  }catch(e){setVaultErr('Error — try again');}
+}
+
+async function doVaultUnlock(){
+  const pin=getVaultPin('pv');
+  if(pin.length<6){setVaultErr('Enter all 6 digits');return;}
+  try{
+    const r=await fetch(API+'/vault/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    const d=await r.json();
+    if(d.ok){vaultStatus.unlocked=true;await fetchVaultEntries();}
+    else{
+      setVaultErr('Wrong PIN — try again');
+      [0,1,2,3,4,5].forEach(i=>{const el=document.getElementById('pv'+i);if(el)el.value='';});
+      setTimeout(()=>{const f=document.getElementById('pv0');if(f)f.focus();},50);
+    }
+  }catch(e){setVaultErr('Error — try again');}
+}
+
+async function fetchVaultEntries(){
+  try{const r=await fetch(API+'/vault/entries');S.vaultEntries=await r.json();}catch(e){S.vaultEntries=[];}
+  renderContent();
+  setTimeout(()=>{const f=document.getElementById('v-app');if(f)f.focus();},50);
+}
+
+async function addVaultEntry(){
+  const app=document.getElementById('v-app')?.value.trim();
+  const user=document.getElementById('v-user')?.value.trim();
+  const pwd=document.getElementById('v-pwd')?.value;
+  if(!app||!user||!pwd){return;}
+  await fetch(API+'/vault/entries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_name:app,username:user,password:pwd})});
+  await fetchVaultEntries();
+}
+
+function startVaultEdit(id){
+  S.vaultEditId=id;S.showPwd={};
+  renderContent();
+  setTimeout(()=>{const f=document.getElementById('v-app');if(f)f.focus();},50);
+}
+
+function cancelVaultEdit(){S.vaultEditId=null;renderContent();}
+
+async function saveVaultEdit(){
+  const app=document.getElementById('v-app')?.value.trim();
+  const user=document.getElementById('v-user')?.value.trim();
+  const pwd=document.getElementById('v-pwd')?.value;
+  if(!app||!user||!pwd||!S.vaultEditId) return;
+  await fetch(API+'/vault/entries/'+S.vaultEditId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_name:app,username:user,password:pwd})});
+  S.vaultEditId=null;
+  await fetchVaultEntries();
+}
+
+async function deleteVaultEntry(id){
+  if(!confirm('Delete this entry? This cannot be undone.')) return;
+  await fetch(API+'/vault/entries/'+id,{method:'DELETE'});
+  delete S.showPwd[id];
+  await fetchVaultEntries();
+}
+
+async function lockVault(){
+  await fetch(API+'/vault/lock',{method:'POST'});
+  vaultStatus.unlocked=false;S.vaultEntries=[];S.showPwd={};S.vaultEditId=null;
+  renderContent();
 }
 
 async function checkAuth(){
