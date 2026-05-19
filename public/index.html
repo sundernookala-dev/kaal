@@ -29,6 +29,8 @@ body{background:#faf9f7;color:#2d2a26;font-family:'DM Sans',sans-serif;min-heigh
 .dark .join-teams{background:#b48c32 !important}
 .dark .join-gmail{background:#a07028 !important}
 
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+
 /* Mobile responsive */
 @media(max-width:640px){
   .app{padding:14px 10px 24px}
@@ -54,7 +56,10 @@ body{background:#faf9f7;color:#2d2a26;font-family:'DM Sans',sans-serif;min-heigh
 </style>
 </head>
 <body>
-<div class="app">
+<div id="auth-wrap" style="display:none;position:fixed;inset:0;background:#faf9f7;z-index:1000;align-items:center;justify-content:center">
+  <div id="auth-inner"></div>
+</div>
+<div class="app" id="main-app" style="display:none">
   <div id="hdr"></div>
   <div id="cdown"></div>
   <div id="tabs"></div>
@@ -290,6 +295,7 @@ function renderHeader(){
         <div style="font-size:16px;font-weight:600;color:${c.text}">${n.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
       </div>
       <button onclick="toggleTheme()" style="width:36px;height:36px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};cursor:pointer;font-size:16px">${S.dark?'☀':'☾'}</button>
+      <button onclick="doLogout()" title="Lock" style="width:36px;height:36px;border-radius:8px;border:1px solid ${c.border};background:${c.surface};cursor:pointer;font-size:16px">🔒</button>
     </div>
   </div>`;
 }
@@ -1980,14 +1986,129 @@ function tickPomo(){
   }
 }
 
-renderHeader();renderCountdownFull();renderTabs();renderContent();
-fetchSettings();fetchEvents();
-fetch(API+'/seed-defaults',{method:'POST'}).then(()=>fetchTasks());
-fetchDefaults();fetchPomoToday();fetchHabitsToday();fetchVitamins();fetchAllVitamins();
-// Load pomodoro duration from settings
-fetch(API+'/settings').then(r=>r.json()).then(s=>{
-  if(s.pomodoro_work) S.pomo.duration=parseInt(s.pomodoro_work)||25;
-}).catch(()=>{});
+// ── AUTH ──────────────────────────────────────────
+function renderAuthScreen(hasPin){
+  const c=C();
+  const isSetup=!hasPin;
+  document.getElementById('auth-wrap').style.display='flex';
+  document.getElementById('auth-inner').innerHTML=`
+  <div style="width:360px;padding:44px 40px;border-radius:24px;background:#fff;box-shadow:0 12px 48px rgba(0,0,0,0.10);text-align:center">
+    <div style="width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,${c.accent},#b8860b);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#fff;margin:0 auto 16px">K</div>
+    <div style="font-size:26px;font-weight:700;color:${c.accent};letter-spacing:4px;margin-bottom:6px">KAAL</div>
+    <div style="font-family:${FM};font-size:11px;color:${c.text3};letter-spacing:2px;margin-bottom:32px">${isSetup?'SET YOUR PIN':'ENTER YOUR PIN'}</div>
+    ${isSetup?`
+    <div style="font-size:13px;color:${c.text2};margin-bottom:12px">Choose a 6-digit PIN</div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:24px" id="pin-boxes-a">${[0,1,2,3,4,5].map(i=>`<input id="pa${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="pinKey('pa',${i},event)" oninput="pinInput('pa',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:#faf9f7;text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+    <div style="font-size:13px;color:${c.text2};margin-bottom:12px">Confirm PIN</div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:28px" id="pin-boxes-b">${[0,1,2,3,4,5].map(i=>`<input id="pb${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="pinKey('pb',${i},event)" oninput="pinInput('pb',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:#faf9f7;text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+    <div id="auth-err" style="font-family:${FM};font-size:12px;color:#c0392b;min-height:18px;margin-bottom:12px"></div>
+    <button onclick="doSetupPin()" style="width:100%;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,${c.accent},#b8860b);color:#fff;font-size:15px;font-weight:600;font-family:${FB};cursor:pointer;letter-spacing:0.5px">Set PIN</button>
+    `:`
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:28px" id="pin-boxes-a">${[0,1,2,3,4,5].map(i=>`<input id="pa${i}" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]" onkeydown="pinKey('pa',${i},event)" oninput="pinInput('pa',${i})" style="width:44px;height:52px;border-radius:10px;border:2px solid ${c.border};background:#faf9f7;text-align:center;font-size:22px;font-family:${FM};outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='${c.accent}'" onblur="this.style.borderColor='${c.border}'">`).join('')}</div>
+    <div id="auth-err" style="font-family:${FM};font-size:12px;color:#c0392b;min-height:18px;margin-bottom:12px"></div>
+    <button onclick="doLogin()" style="width:100%;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,${c.accent},#b8860b);color:#fff;font-size:15px;font-weight:600;font-family:${FB};cursor:pointer;letter-spacing:0.5px">Unlock</button>
+    `}
+  </div>`;
+  setTimeout(()=>{const f=document.getElementById('pa0');if(f)f.focus();},50);
+}
+
+function pinInput(prefix,i){
+  const el=document.getElementById(prefix+i);
+  el.value=el.value.replace(/[^0-9]/g,'').slice(-1);
+  if(el.value&&i<5){const nx=document.getElementById(prefix+(i+1));if(nx)nx.focus();}
+  // auto-submit login when last box filled
+  if(prefix==='pa'&&i===5&&el.value&&!document.getElementById('pb0')){
+    const pin=[0,1,2,3,4,5].map(j=>document.getElementById('pa'+j).value).join('');
+    if(pin.length===6) doLogin();
+  }
+}
+
+function pinKey(prefix,i,e){
+  if(e.key==='Backspace'&&!document.getElementById(prefix+i).value&&i>0){
+    const pv=document.getElementById(prefix+(i-1));if(pv){pv.value='';pv.focus();}
+  }
+  if(e.key==='Enter'){
+    if(document.getElementById('pb0')) doSetupPin(); else doLogin();
+  }
+}
+
+function getPinValue(prefix){
+  return [0,1,2,3,4,5].map(i=>{const el=document.getElementById(prefix+i);return el?el.value:''}).join('');
+}
+
+function setAuthErr(msg){
+  const el=document.getElementById('auth-err');
+  if(el){el.textContent=msg;
+    // shake animation
+    el.parentElement.style.animation='none';
+    el.parentElement.offsetHeight;
+    el.parentElement.style.animation='shake 0.35s ease';
+  }
+}
+
+async function doLogin(){
+  const pin=getPinValue('pa');
+  if(pin.length<6){setAuthErr('Enter all 6 digits');return;}
+  try{
+    const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('auth-wrap').style.display='none';
+      initApp();
+    } else {
+      setAuthErr('Wrong PIN — try again');
+      [0,1,2,3,4,5].forEach(i=>{const el=document.getElementById('pa'+i);if(el)el.value='';});
+      setTimeout(()=>{const f=document.getElementById('pa0');if(f)f.focus();},50);
+    }
+  }catch(e){setAuthErr('Error — try again');}
+}
+
+async function doSetupPin(){
+  const pin=getPinValue('pa'),confirm=getPinValue('pb');
+  if(pin.length<6){setAuthErr('Enter all 6 digits for your PIN');return;}
+  if(confirm.length<6){setAuthErr('Enter all 6 digits to confirm');return;}
+  if(pin!==confirm){setAuthErr('PINs do not match — try again');
+    [0,1,2,3,4,5].forEach(i=>{const el=document.getElementById('pb'+i);if(el)el.value='';});
+    setTimeout(()=>{const f=document.getElementById('pb0');if(f)f.focus();},50);
+    return;
+  }
+  try{
+    const r=await fetch(API+'/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('auth-wrap').style.display='none';
+      initApp();
+    } else {setAuthErr(d.error||'Error — try again');}
+  }catch(e){setAuthErr('Error — try again');}
+}
+
+async function doLogout(){
+  await fetch(API+'/auth/logout',{method:'POST'}).catch(()=>{});
+  window.location.reload();
+}
+
+async function checkAuth(){
+  try{
+    const r=await fetch(API+'/auth/status');
+    const d=await r.json();
+    if(d.authed){initApp();}
+    else{renderAuthScreen(d.hasPin);}
+  }catch(e){renderAuthScreen(false);}
+}
+
+function initApp(){
+  document.getElementById('main-app').style.display='block';
+  renderHeader();renderCountdownFull();renderTabs();renderContent();
+  fetchSettings();fetchEvents();
+  fetch(API+'/seed-defaults',{method:'POST'}).then(()=>fetchTasks());
+  setInterval(()=>{if(S.tab==='kaaya')fetchWeight();},30000);
+  fetchDefaults();fetchPomoToday();fetchHabitsToday();fetchVitamins();fetchAllVitamins();
+  fetch(API+'/settings').then(r=>r.json()).then(s=>{
+    if(s.pomodoro_work) S.pomo.duration=parseInt(s.pomodoro_work)||25;
+  }).catch(()=>{});
+}
+
+checkAuth();
 setInterval(()=>{tickCD();tickPomo()},1000);
 </script>
 </body>

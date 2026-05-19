@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const https = require('https');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 
@@ -1153,6 +1154,100 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
+});
+
+// ═══════════════════════════════════════════════════
+// AUTH — PIN + session cookie
+// ═══════════════════════════════════════════════════
+const sessions = new Map(); // token -> createdAt (in-memory; clears on server restart)
+
+function getCookie(req, name) {
+  const hdr = req.headers.cookie || '';
+  const m = hdr.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='));
+  return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
+}
+function setSessionCookie(res, token) {
+  res.setHeader('Set-Cookie', `kaal_session=${token}; HttpOnly; SameSite=Strict; Path=/`);
+}
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', 'kaal_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+}
+function generateToken() { return crypto.randomBytes(32).toString('hex'); }
+function hashPin(pin) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(pin, salt, 100000, 32, 'sha256').toString('hex');
+  return salt + ':' + hash;
+}
+function verifyPin(pin, stored) {
+  const [salt, hash] = stored.split(':');
+  return crypto.pbkdf2Sync(pin, salt, 100000, 32, 'sha256').toString('hex') === hash;
+}
+function getSetting(key) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+function setSetting(key, value) {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
+}
+
+function requireAuth(req, res, next) {
+  const token = getCookie(req, 'kaal_session');
+  if (token && sessions.has(token)) return next();
+  res.status(401).json({ error: 'Unauthorized' });
+}
+
+// Apply auth to all /api/* except /api/auth/* and /api/health
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth/') || req.path === '/health') return next();
+  requireAuth(req, res, next);
+});
+
+app.get('/api/auth/status', (req, res) => {
+  const token = getCookie(req, 'kaal_session');
+  res.json({
+    authed: !!(token && sessions.has(token)),
+    hasPin: !!getSetting('pin_hash'),
+  });
+});
+
+app.post('/api/auth/setup', (req, res) => {
+  const { pin } = req.body;
+  if (!pin || !/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'PIN must be 6 digits' });
+  if (getSetting('pin_hash')) return res.status(400).json({ error: 'PIN already set — use change PIN' });
+  setSetting('pin_hash', hashPin(pin));
+  const token = generateToken();
+  sessions.set(token, Date.now());
+  setSessionCookie(res, token);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { pin } = req.body;
+  const stored = getSetting('pin_hash');
+  if (!stored) return res.status(400).json({ error: 'No PIN set' });
+  if (!pin || !verifyPin(pin, stored)) return res.status(401).json({ error: 'Wrong PIN' });
+  const token = generateToken();
+  sessions.set(token, Date.now());
+  setSessionCookie(res, token);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = getCookie(req, 'kaal_session');
+  if (token) sessions.delete(token);
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/change-pin', (req, res) => {
+  const token = getCookie(req, 'kaal_session');
+  if (!token || !sessions.has(token)) return res.status(401).json({ error: 'Unauthorized' });
+  const { currentPin, newPin } = req.body;
+  const stored = getSetting('pin_hash');
+  if (!stored || !verifyPin(currentPin, stored)) return res.status(401).json({ error: 'Wrong current PIN' });
+  if (!newPin || !/^\d{6}$/.test(newPin)) return res.status(400).json({ error: 'New PIN must be 6 digits' });
+  setSetting('pin_hash', hashPin(newPin));
+  res.json({ ok: true });
 });
 
 // ─── Health check ───
