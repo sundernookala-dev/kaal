@@ -331,7 +331,7 @@ function renderTabs(){
   </div>`;
 }
 
-function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings()}
+function renderContent(){document.getElementById('content').innerHTML=S.tab==='meetings'?renderCalendar():S.tab==='tasks'?(renderTaskHeader()+renderPomoTimer()+(S.taskView==='today'?renderKanban():renderMonthlyTasks())):S.tab==='habits'?(renderHabitHeader()+(S.habitView==='today'?renderHabitsToday():renderHabitsMonth())):S.tab==='vitamins'?(renderVitaminHeader()+(S.vitaminView==='today'?renderVitaminsToday():renderVitaminsMonth())):S.tab==='hobbies'?renderHobbies():S.tab==='kaaya'?renderKaaya():S.tab==='sadhana'?renderSadhana():renderSettings();if(S.tab==='tasks'&&S.taskView==='today')setTimeout(()=>{const inp=document.getElementById('task-input');if(inp)inp.focus()},50)}
 
 function renderTaskHeader(){
   const c=C();
@@ -1476,7 +1476,7 @@ function renderKanban(){
   let h=`<div style="display:flex;gap:8px;margin-bottom:20px;padding:4px;border-radius:10px;background:${c.surface};border:1px solid ${c.border};flex-wrap:wrap">
     <input id="task-input" placeholder="Type a task… or send voice via Telegram" style="flex:1;min-width:200px;padding:12px 16px;border-radius:7px;background:transparent;border:none;outline:none;font-size:14px;color:${c.text}" onkeydown="if(event.key==='Enter')addNewTask()">
     <div style="display:flex;gap:4px;align-items:center">
-      <input type="date" id="task-date" value="${new Date().toLocaleDateString('en-CA')}" style="padding:8px 10px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:11px;outline:none;width:130px">
+      <input type="date" id="task-date" value="${S.taskDate}" onchange="S.taskDate=this.value;fetchTasks()" style="padding:8px 10px;border-radius:7px;border:1px solid ${c.border};background:${c.surface2};color:${c.text};font-family:${FM};font-size:11px;outline:none;width:130px">
       <button onclick="addNewTask()" style="padding:10px 20px;border-radius:7px;border:none;cursor:pointer;background:${c.accent};color:#fff;font-family:${FM};font-size:13px;font-weight:600">+ Add</button>
     </div>
   </div><div class="kanban-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">`;
